@@ -1,0 +1,6 @@
+{
+  "name": "Bulk Image Compressor",
+  "description": "Fast, 100% client-side bulk image compressor and ZIP packager supporting unlimited batch sizes with custom quality, dimensions, and format preservation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
