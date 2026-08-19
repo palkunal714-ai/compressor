@@ -5,6 +5,7 @@ import { formatBytes } from '../utils/formatters';
 
 interface StatsBarProps {
   stats: BatchStats;
+  folderCount?: number;
   onCompressAndDownload: () => void;
   onCompressAll: () => void;
   onDownloadZip: () => void;
@@ -15,6 +16,7 @@ interface StatsBarProps {
 
 export const StatsBar: React.FC<StatsBarProps> = ({
   stats,
+  folderCount = 0,
   onCompressAndDownload,
   onCompressAll,
   onDownloadZip,
@@ -40,7 +42,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
     <div className="sticky bottom-0 z-30 w-full bg-[#0a0a0a] border-t border-white/10 px-4 sm:px-8 py-4 text-white shadow-2xl backdrop-blur-md">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Metric Group */}
-        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-8 w-full md:w-auto">
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6 w-full md:w-auto">
           {/* Total Savings */}
           <div className="flex flex-col">
             <span className="text-[10px] uppercase font-bold text-white/30 tracking-widest">
@@ -61,17 +63,24 @@ export const StatsBar: React.FC<StatsBarProps> = ({
 
           <div className="h-8 w-[1px] bg-white/10 hidden sm:block"></div>
 
-          {/* Processed Count */}
+          {/* Processed Count & Folders */}
           <div className="flex flex-col">
             <span className="text-[10px] uppercase font-bold text-white/30 tracking-widest">
               Processed
             </span>
-            <span className="text-base sm:text-lg font-semibold text-white/90 font-mono">
-              {processedCount}{' '}
-              <span className="text-white/30 text-xs sm:text-sm font-normal">
-                / {totalCount}
+            <div className="flex items-center gap-2">
+              <span className="text-base sm:text-lg font-semibold text-white/90 font-mono">
+                {processedCount}{' '}
+                <span className="text-white/30 text-xs sm:text-sm font-normal">
+                  / {totalCount}
+                </span>
               </span>
-            </span>
+              {folderCount > 0 && (
+                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300">
+                  {folderCount} {folderCount === 1 ? 'folder' : 'folders'}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="h-8 w-[1px] bg-white/10 hidden sm:block"></div>

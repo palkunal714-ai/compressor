@@ -2,6 +2,8 @@ export interface ImageItem {
   id: string;
   file: File;
   name: string;
+  relativePath?: string; // e.g. "series-333/dial/clock.png" or "clock.png"
+  folderPath?: string; // e.g. "series-333/dial"
   originalSize: number;
   originalFormat: string;
   previewUrl: string;
@@ -11,6 +13,7 @@ export interface ImageItem {
   compressedSize: number | null;
   compressedFormat: string | null;
   outputFilename: string;
+  outputRelativePath?: string;
   width?: number;
   height?: number;
   compressedWidth?: number;

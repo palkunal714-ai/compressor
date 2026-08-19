@@ -4,7 +4,7 @@ import { ImageItem } from '../types';
 import { generateZipFilename } from './formatters';
 
 /**
- * Package compressed images into a single ZIP file and trigger browser download
+ * Package compressed images into a single ZIP file preserving exact folder structures and trigger browser download
  */
 export async function createAndDownloadZip(
   items: ImageItem[],
@@ -18,32 +18,58 @@ export async function createAndDownloadZip(
   }
 
   const zip = new JSZip();
-  const filenameCountMap = new Map<string, number>();
+  const pathCountMap = new Map<string, number>();
 
   for (const item of validItems) {
     if (!item.compressedBlob) continue;
 
-    let filename = item.outputFilename || item.name;
+    // Use outputRelativePath (folder/subfolder/filename.ext) if available, or relativePath, or outputFilename
+    let targetPath = (
+      item.outputRelativePath ||
+      item.relativePath ||
+      item.outputFilename ||
+      item.name
+    ).replace(/\\/g, '/');
 
-    // Handle potential duplicate filenames in batch by adding numeric suffix before extension
-    if (filenameCountMap.has(filename)) {
-      const count = filenameCountMap.get(filename)! + 1;
-      filenameCountMap.set(filename, count);
+    // Strip leading slashes to prevent root-level absolute path issues
+    targetPath = targetPath.replace(/^\/+/, '');
 
-      const dotIdx = filename.lastIndexOf('.');
+    // Handle potential duplicate file paths in batch by adding numeric suffix before extension
+    if (pathCountMap.has(targetPath)) {
+      const count = pathCountMap.get(targetPath)! + 1;
+      pathCountMap.set(targetPath, count);
+
+      const dotIdx = targetPath.lastIndexOf('.');
       if (dotIdx !== -1) {
-        filename = `${filename.substring(0, dotIdx)} (${count})${filename.substring(dotIdx)}`;
+        targetPath = `${targetPath.substring(0, dotIdx)} (${count})${targetPath.substring(dotIdx)}`;
       } else {
-        filename = `${filename} (${count})`;
+        targetPath = `${targetPath} (${count})`;
       }
     } else {
-      filenameCountMap.set(filename, 0);
+      pathCountMap.set(targetPath, 0);
     }
 
-    zip.file(filename, item.compressedBlob);
+    // JSZip automatically creates intermediate folders when a path containing '/' is passed
+    zip.file(targetPath, item.compressedBlob);
   }
 
-  const zipFilename = customZipName || generateZipFilename();
+  // Smart naming: if all files share a common root folder, name it after that folder
+  let zipFilename = customZipName;
+  if (!zipFilename) {
+    const rootFolders = new Set<string>();
+    for (const item of validItems) {
+      if (item.folderPath) {
+        const root = item.folderPath.split('/')[0];
+        if (root) rootFolders.add(root);
+      }
+    }
+    if (rootFolders.size === 1) {
+      const singleRoot = Array.from(rootFolders)[0];
+      zipFilename = `${singleRoot}-compressed.zip`;
+    } else {
+      zipFilename = generateZipFilename();
+    }
+  }
 
   const zipBlob = await zip.generateAsync(
     {

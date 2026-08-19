@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Zap, Layers, Sparkles, FolderArchive, Sliders } from 'lucide-react';
+import { ShieldCheck, Zap, Sparkles, FolderTree, Sliders, FolderArchive, Layers } from 'lucide-react';
 
 interface EmptyStateProps {
   onLoadSamples: () => void;
@@ -12,24 +12,24 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 }) => {
   const highlights = [
     {
-      icon: ShieldCheck,
-      title: 'Private & Zero Uploads',
-      desc: 'All compression operations execute directly inside browser Web Workers.',
+      icon: FolderTree,
+      title: 'Full Subfolder Hierarchy',
+      desc: 'Preserves arbitrary nested directory structures and subfolders in your exported ZIP.',
     },
     {
-      icon: FolderArchive,
-      title: 'Exact Filename Retention',
-      desc: 'Exported ZIP packages preserve your original naming hierarchy.',
+      icon: ShieldCheck,
+      title: 'Private & Zero Uploads',
+      desc: 'All compression operations execute directly inside your browser sandbox.',
     },
     {
       icon: Zap,
-      title: 'High-Throughput Concurrency',
+      title: 'High-Throughput Pool',
       desc: 'Multi-threaded worker pool prevents UI freeze on 100+ file batches.',
     },
     {
       icon: Sliders,
-      title: 'Full Format Support',
-      desc: 'Native support for JPG, PNG, WebP, GIF, HEIC, TIFF, and BMP.',
+      title: 'Universal Formats',
+      desc: 'Full support for JPG, PNG, WebP, GIF, HEIC, TIFF, and BMP.',
     },
   ];
 
@@ -58,21 +58,23 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       </div>
 
       {/* Demo sample loader */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-blue-950/20 via-white/[0.02] to-transparent border border-blue-500/20 text-center sm:text-left">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-blue-950/20 via-white/[0.02] to-amber-950/10 border border-blue-500/20 text-center sm:text-left">
         <div className="flex items-center gap-2.5">
           <Sparkles className="w-4 h-4 text-blue-400 shrink-0" />
           <div>
-            <div className="text-xs font-semibold text-white">Instant Demo Batch</div>
-            <div className="text-[11px] text-white/40">Load 4 sample high-res test images with gradients and patterns.</div>
+            <div className="text-xs font-semibold text-white">Instant Demo Batch with Subfolders</div>
+            <div className="text-[11px] text-white/40">Load sample clock & watch series (ornate-classic, series-333, series-444, series-740, etc.) with complete folder paths.</div>
           </div>
         </div>
         <button
+          id="load-sample-batch-btn"
           type="button"
           disabled={isLoadingSamples}
           onClick={onLoadSamples}
-          className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-semibold border border-white/10 transition-colors disabled:opacity-40 shrink-0"
+          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold shadow-md shadow-blue-600/20 transition-all disabled:opacity-40 shrink-0 flex items-center gap-1.5"
         >
-          {isLoadingSamples ? 'Generating Samples...' : 'Load Sample Images'}
+          <FolderTree className="w-3.5 h-3.5" />
+          <span>{isLoadingSamples ? 'Generating Folder Batch...' : 'Load Sample Folder Tree'}</span>
         </button>
       </div>
     </div>

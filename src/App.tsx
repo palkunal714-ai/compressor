@@ -14,6 +14,7 @@ import { formatBytes } from './utils/formatters';
 import { compressSingleImage, getImageDimensions, processQueueWithConcurrency } from './utils/imageCompressor';
 import { createAndDownloadZip, downloadSingleFile } from './utils/zipPackager';
 import { generateSampleImages } from './utils/sampleGenerator';
+import { ScannedFileItem, extractFolderPath, getFolderHierarchySummary } from './utils/fileScanner';
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   quality: 80,
@@ -106,24 +107,43 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // --- Add Files to Batch ---
+  // --- Add Files or Folders to Batch ---
   const handleFilesSelected = useCallback(
-    async (files: File[]) => {
-      if (files.length === 0) return;
+    async (incoming: (File | ScannedFileItem)[]) => {
+      if (incoming.length === 0) return;
 
       const largeFiles: string[] = [];
       const newItems: ImageItem[] = [];
 
-      for (const file of files) {
+      for (const item of incoming) {
+        let file: File;
+        let relativePath: string;
+        let folderPath: string | undefined;
+
+        if ('file' in item && 'relativePath' in item) {
+          file = item.file;
+          relativePath = item.relativePath;
+          folderPath = item.folderPath;
+        } else {
+          file = item as File;
+          relativePath = file.webkitRelativePath
+            ? file.webkitRelativePath.replace(/\\/g, '/')
+            : file.name;
+          relativePath = relativePath.replace(/^\/+/, '');
+          folderPath = extractFolderPath(relativePath);
+        }
+
         if (file.size > 45 * 1024 * 1024) {
           largeFiles.push(file.name);
         }
 
         const previewUrl = URL.createObjectURL(file);
-        const item: ImageItem = {
+        const imageItem: ImageItem = {
           id: `img-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
           file,
           name: file.name,
+          relativePath,
+          folderPath,
           originalSize: file.size,
           originalFormat: file.type || 'image/jpeg',
           previewUrl,
@@ -133,9 +153,10 @@ export default function App() {
           compressedSize: null,
           compressedFormat: null,
           outputFilename: file.name,
+          outputRelativePath: relativePath,
         };
 
-        newItems.push(item);
+        newItems.push(imageItem);
       }
 
       // Read dimensions in background
@@ -148,7 +169,17 @@ export default function App() {
 
       setImages((prev) => [...prev, ...newItems]);
 
-      if (largeFiles.length > 0) {
+      const summary = getFolderHierarchySummary(newItems);
+      if (summary.distinctFoldersCount > 0) {
+        const rootList = summary.rootFolders.slice(0, 3).join(', ');
+        const extra = summary.rootFolders.length > 3 ? ` +${summary.rootFolders.length - 3} more` : '';
+        addToast({
+          type: 'success',
+          title: `Mapped ${newItems.length} images across ${summary.distinctFoldersCount} folder(s)`,
+          message: `Folder hierarchy preserved (${rootList}${extra}). Will mirror exactly in exported ZIP.`,
+          duration: 5000,
+        });
+      } else if (largeFiles.length > 0) {
         addToast({
           type: 'warning',
           title: 'Large files detected',
@@ -230,6 +261,7 @@ export default function App() {
                   compressedSize: result.size,
                   compressedFormat: result.format,
                   outputFilename: result.outputFilename,
+                  outputRelativePath: result.outputRelativePath,
                   compressedWidth: result.width,
                   compressedHeight: result.height,
                   warning: result.warning || null,
@@ -378,14 +410,8 @@ export default function App() {
   const handleLoadSamples = useCallback(async () => {
     setIsLoadingSamples(true);
     try {
-      const sampleFiles = await generateSampleImages();
+      const sampleFiles = await generateSampleImages(true);
       await handleFilesSelected(sampleFiles);
-      addToast({
-        type: 'success',
-        title: 'Sample Batch Ready',
-        message: 'Loaded 4 high-res sample assets (JPG, PNG Transparent, WebP).',
-        duration: 4000,
-      });
     } catch (err) {
       console.error('Failed to generate samples:', err);
       addToast({
@@ -537,6 +563,7 @@ export default function App() {
       {images.length > 0 && (
         <StatsBar
           stats={batchStats}
+          folderCount={getFolderHierarchySummary(images).distinctFoldersCount}
           onCompressAndDownload={() => handleCompressAll(true)}
           onCompressAll={() => handleCompressAll(false)}
           onDownloadZip={() => triggerZipDownload()}

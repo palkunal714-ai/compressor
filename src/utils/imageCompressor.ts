@@ -95,42 +95,47 @@ async function prepareFileForCompression(file: File): Promise<{ preparedFile: Fi
 }
 
 /**
- * Determine output MIME type and output filename based on settings
+ * Determine output MIME type, filename, and relative path based on settings
  */
 export function determineOutputDetails(
   originalFile: File,
-  settings: CompressionSettings
-): { outputType: string; outputFilename: string } {
+  settings: CompressionSettings,
+  relativePath?: string
+): { outputType: string; outputFilename: string; outputRelativePath?: string } {
   const originalName = originalFile.name;
   const originalExt = getFileExtension(originalName);
   const rawType = originalFile.type.toLowerCase();
 
+  let targetExt = originalExt;
+  let outputType = 'image/jpeg';
+
   // If user selected convert to WebP
   if (!settings.keepOriginalFormat && settings.convertToWebp) {
-    return {
-      outputType: 'image/webp',
-      outputFilename: replaceFileExtension(originalName, 'webp'),
-    };
+    targetExt = 'webp';
+    outputType = 'image/webp';
+  } else if (rawType.includes('png') || originalExt === 'png') {
+    targetExt = 'png';
+    outputType = 'image/png';
+  } else if (rawType.includes('webp') || originalExt === 'webp') {
+    targetExt = 'webp';
+    outputType = 'image/webp';
+  } else if (rawType.includes('gif') || originalExt === 'gif') {
+    targetExt = originalExt || 'gif';
+    outputType = 'image/png';
+  } else if (rawType.includes('heic') || originalExt === 'heic' || originalExt === 'heif') {
+    targetExt = 'jpg';
+    outputType = 'image/jpeg';
+  } else {
+    targetExt = originalExt || 'jpg';
+    outputType = 'image/jpeg';
   }
 
-  // Keep original format (exact filename match)
-  if (rawType.includes('png') || originalExt === 'png') {
-    return { outputType: 'image/png', outputFilename: originalName };
-  }
-  if (rawType.includes('webp') || originalExt === 'webp') {
-    return { outputType: 'image/webp', outputFilename: originalName };
-  }
-  if (rawType.includes('gif') || originalExt === 'gif') {
-    // Keep exact filename
-    return { outputType: 'image/png', outputFilename: originalName };
-  }
-  if (rawType.includes('heic') || originalExt === 'heic' || originalExt === 'heif') {
-    // Exact original name kept
-    return { outputType: 'image/jpeg', outputFilename: originalName };
-  }
+  const outputFilename = replaceFileExtension(originalName, targetExt);
+  const outputRelativePath = relativePath
+    ? replaceFileExtension(relativePath, targetExt)
+    : undefined;
 
-  // Default JPEG
-  return { outputType: 'image/jpeg', outputFilename: originalName };
+  return { outputType, outputFilename, outputRelativePath };
 }
 
 /**
@@ -145,12 +150,17 @@ export async function compressSingleImage(
   size: number;
   format: string;
   outputFilename: string;
+  outputRelativePath?: string;
   width: number;
   height: number;
   warning?: string;
 }> {
   const { preparedFile, warning } = await prepareFileForCompression(item.file);
-  const { outputType, outputFilename } = determineOutputDetails(item.file, settings);
+  const { outputType, outputFilename, outputRelativePath } = determineOutputDetails(
+    item.file,
+    settings,
+    item.relativePath
+  );
 
   // If target is PNG, browser-image-compression handles PNG compression.
   // We compute normalized max width / height if requested.
@@ -204,6 +214,7 @@ export async function compressSingleImage(
           size: preparedFile.size,
           format: preparedFile.type || outputType,
           outputFilename,
+          outputRelativePath,
           width: origDim.width,
           height: origDim.height,
           warning: warning || 'File was already optimized; retained best original quality.',
@@ -218,6 +229,7 @@ export async function compressSingleImage(
       size: compressedBlob.size,
       format: outputType,
       outputFilename,
+      outputRelativePath,
       width: dimensions.width,
       height: dimensions.height,
       warning,
@@ -226,7 +238,13 @@ export async function compressSingleImage(
     console.error('Error during imageCompression:', error);
     // Canvas fallback compression if web worker or lib failed
     try {
-      const fallbackResult = await compressViaCanvasFallback(preparedFile, settings, outputType, outputFilename);
+      const fallbackResult = await compressViaCanvasFallback(
+        preparedFile,
+        settings,
+        outputType,
+        outputFilename,
+        outputRelativePath
+      );
       if (onProgress) onProgress(100);
       return fallbackResult;
     } catch (fallbackError: any) {
@@ -242,12 +260,14 @@ async function compressViaCanvasFallback(
   file: File,
   settings: CompressionSettings,
   outputType: string,
-  outputFilename: string
+  outputFilename: string,
+  outputRelativePath?: string
 ): Promise<{
   blob: Blob;
   size: number;
   format: string;
   outputFilename: string;
+  outputRelativePath?: string;
   width: number;
   height: number;
 }> {
@@ -297,6 +317,7 @@ async function compressViaCanvasFallback(
               size: blob.size,
               format: outputType,
               outputFilename,
+              outputRelativePath,
               width,
               height,
             });

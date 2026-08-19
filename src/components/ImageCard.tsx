@@ -74,10 +74,23 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
         {/* Middle Metadata */}
         <div className="flex-1 min-w-0">
+          {/* Folder Path Breadcrumb if nested */}
+          {item.folderPath && (
+            <div
+              className="flex items-center gap-1 text-[10px] text-amber-400/80 font-mono mb-0.5 truncate"
+              title={`Folder: ${item.folderPath}`}
+            >
+              <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-semibold shrink-0">
+                FOLDER
+              </span>
+              <span className="truncate">{item.folderPath}/</span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-1 mb-1">
             <h3
               className="text-xs sm:text-sm font-semibold text-white truncate max-w-[140px] sm:max-w-[180px]"
-              title={item.outputFilename || item.name}
+              title={item.outputRelativePath || item.outputFilename || item.name}
             >
               {item.outputFilename || item.name}
             </h3>

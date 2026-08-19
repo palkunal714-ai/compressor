@@ -51,7 +51,15 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = ({
             )}
           </div>
           <div>
-            <div className="font-semibold text-xs sm:text-sm text-white max-w-[180px] sm:max-w-xs truncate" title={item.outputFilename || item.name}>
+            {item.folderPath && (
+              <div className="text-[10px] text-amber-400/80 font-mono flex items-center gap-1 mb-0.5 truncate max-w-[220px]">
+                <span className="text-[8px] px-1 py-0.1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-semibold">
+                  FOLDER
+                </span>
+                <span className="truncate">{item.folderPath}/</span>
+              </div>
+            )}
+            <div className="font-semibold text-xs sm:text-sm text-white max-w-[180px] sm:max-w-xs truncate" title={item.outputRelativePath || item.outputFilename || item.name}>
               {item.outputFilename || item.name}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
