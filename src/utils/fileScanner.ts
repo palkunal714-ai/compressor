@@ -2,13 +2,14 @@
  * Advanced file and folder scanning utility for web applications.
  * Handles single files, multi-file selections, and arbitrary-depth recursive folder trees
  * from both file inputs (webkitdirectory), File System Access API (showDirectoryPicker),
- * and Drag & Drop (FileSystemEntry API).
+ * and Drag & Drop (FileSystemEntry API) for both IMAGES and VIDEOS.
  */
 
 export interface ScannedFileItem {
   file: File;
   relativePath: string;
   folderPath?: string;
+  mediaType?: 'image' | 'video';
 }
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([
@@ -26,6 +27,17 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   'svg',
 ]);
 
+const SUPPORTED_VIDEO_EXTENSIONS = new Set([
+  'mp4',
+  'webm',
+  'mov',
+  'mkv',
+  'avi',
+  'm4v',
+  'ogv',
+  '3gp',
+]);
+
 const IGNORED_FILES = new Set([
   '.ds_store',
   'thumbs.db',
@@ -35,32 +47,49 @@ const IGNORED_FILES = new Set([
 ]);
 
 /**
- * Check if a file is a supported image based on extension or MIME type
+ * Check if a file is a supported image or video based on extension or MIME type
  */
-export function isValidImageFile(filename: string, mimeType?: string): boolean {
+export function isValidMediaFile(filename: string, mimeType?: string): { isValid: boolean; mediaType: 'image' | 'video' } {
   const lowerName = filename.toLowerCase();
 
   // Filter out system hidden metadata files
   if (IGNORED_FILES.has(lowerName) || lowerName.startsWith('._') || lowerName.startsWith('.')) {
-    return false;
+    return { isValid: false, mediaType: 'image' };
   }
 
-  if (mimeType && mimeType.startsWith('image/')) {
-    return true;
+  if (mimeType) {
+    if (mimeType.startsWith('video/')) {
+      return { isValid: true, mediaType: 'video' };
+    }
+    if (mimeType.startsWith('image/')) {
+      return { isValid: true, mediaType: 'image' };
+    }
   }
 
   const dotIdx = lowerName.lastIndexOf('.');
   if (dotIdx !== -1) {
     const ext = lowerName.slice(dotIdx + 1);
-    return SUPPORTED_IMAGE_EXTENSIONS.has(ext);
+    if (SUPPORTED_VIDEO_EXTENSIONS.has(ext)) {
+      return { isValid: true, mediaType: 'video' };
+    }
+    if (SUPPORTED_IMAGE_EXTENSIONS.has(ext)) {
+      return { isValid: true, mediaType: 'image' };
+    }
   }
 
-  return false;
+  return { isValid: false, mediaType: 'image' };
+}
+
+/**
+ * Backward compatibility alias for isValidImageFile
+ */
+export function isValidImageFile(filename: string, mimeType?: string): boolean {
+  return isValidMediaFile(filename, mimeType).isValid;
 }
 
 /**
  * Extract clean folder path from relative path
- * e.g. "series-333/front/dial.jpg" -> "series-333/front"
+ * e.g. "series-333/dial/clock.png" -> "series-333/dial"
  * e.g. "photo.jpg" -> undefined
  */
 export function extractFolderPath(relativePath: string): string | undefined {
@@ -80,7 +109,8 @@ export function scanFileList(files: FileList | File[]): ScannedFileItem[] {
   const fileArray = Array.from(files);
 
   for (const file of fileArray) {
-    if (!isValidImageFile(file.name, file.type)) {
+    const check = isValidMediaFile(file.name, file.type);
+    if (!check.isValid) {
       continue;
     }
 
@@ -96,6 +126,7 @@ export function scanFileList(files: FileList | File[]): ScannedFileItem[] {
       file,
       relativePath,
       folderPath,
+      mediaType: check.mediaType,
     });
   }
 
@@ -140,13 +171,15 @@ async function scanFileSystemEntry(entry: FileSystemEntry, currentPath: string =
         fileEntry.file(resolve, reject);
       });
 
-      if (isValidImageFile(file.name, file.type)) {
+      const check = isValidMediaFile(file.name, file.type);
+      if (check.isValid) {
         const fullRelativePath = currentPath ? `${currentPath}/${file.name}` : file.name;
         const folderPath = extractFolderPath(fullRelativePath);
         results.push({
           file,
           relativePath: fullRelativePath,
           folderPath,
+          mediaType: check.mediaType,
         });
       }
     } catch (err) {
@@ -220,12 +253,14 @@ export async function scanDirectoryHandle(
       const fileHandle = entry as FileSystemFileHandle;
       try {
         const file = await fileHandle.getFile();
-        if (isValidImageFile(file.name, file.type)) {
+        const check = isValidMediaFile(file.name, file.type);
+        if (check.isValid) {
           const fullRelativePath = `${folderPath}/${file.name}`;
           results.push({
             file,
             relativePath: fullRelativePath,
             folderPath: folderPath,
+            mediaType: check.mediaType,
           });
         }
       } catch (err) {

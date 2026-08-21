@@ -12,9 +12,10 @@ import { ToastContainer, ToastItem } from './components/ToastContainer';
 import { ImageItem, CompressionSettings, BatchStats, ViewMode } from './types';
 import { formatBytes } from './utils/formatters';
 import { compressSingleImage, getImageDimensions, processQueueWithConcurrency } from './utils/imageCompressor';
+import { compressSingleVideo, generateVideoThumbnail, getVideoMetadata } from './utils/videoCompressor';
 import { createAndDownloadZip, downloadSingleFile } from './utils/zipPackager';
 import { generateSampleImages } from './utils/sampleGenerator';
-import { ScannedFileItem, extractFolderPath, getFolderHierarchySummary } from './utils/fileScanner';
+import { ScannedFileItem, extractFolderPath, getFolderHierarchySummary, isValidMediaFile } from './utils/fileScanner';
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   quality: 80,
@@ -22,13 +23,15 @@ const DEFAULT_SETTINGS: CompressionSettings = {
   maxHeight: null,
   keepOriginalFormat: true,
   convertToWebp: false,
+  videoFps: 30,
+  muteAudio: false,
   concurrency: 4,
   stripExif: true,
 };
 
-const SETTINGS_STORAGE_KEY = 'bulk_compressor_settings_v1';
-const THEME_STORAGE_KEY = 'bulk_compressor_theme_v1';
-const VIEW_STORAGE_KEY = 'bulk_compressor_view_v1';
+const SETTINGS_STORAGE_KEY = 'bulk_compressor_settings_v2';
+const THEME_STORAGE_KEY = 'bulk_compressor_theme_v2';
+const VIEW_STORAGE_KEY = 'bulk_compressor_view_v2';
 
 export default function App() {
   // --- States ---
@@ -46,7 +49,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem(THEME_STORAGE_KEY);
       if (saved) return saved === 'dark';
-      return true; // Default to dark for Immersive UI
+      return true; // Default to dark theme
     } catch {
       return true;
     }
@@ -119,11 +122,13 @@ export default function App() {
         let file: File;
         let relativePath: string;
         let folderPath: string | undefined;
+        let mediaType: 'image' | 'video' = 'image';
 
         if ('file' in item && 'relativePath' in item) {
           file = item.file;
           relativePath = item.relativePath;
           folderPath = item.folderPath;
+          mediaType = item.mediaType || isValidMediaFile(file.name, file.type).mediaType;
         } else {
           file = item as File;
           relativePath = file.webkitRelativePath
@@ -131,21 +136,23 @@ export default function App() {
             : file.name;
           relativePath = relativePath.replace(/^\/+/, '');
           folderPath = extractFolderPath(relativePath);
+          mediaType = isValidMediaFile(file.name, file.type).mediaType;
         }
 
-        if (file.size > 45 * 1024 * 1024) {
+        if (file.size > 80 * 1024 * 1024) {
           largeFiles.push(file.name);
         }
 
-        const previewUrl = URL.createObjectURL(file);
+        const previewUrl = mediaType === 'image' ? URL.createObjectURL(file) : '';
         const imageItem: ImageItem = {
-          id: `img-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          id: `media-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
           file,
           name: file.name,
+          mediaType,
           relativePath,
           folderPath,
           originalSize: file.size,
-          originalFormat: file.type || 'image/jpeg',
+          originalFormat: file.type || (mediaType === 'video' ? 'video/mp4' : 'image/jpeg'),
           previewUrl,
           status: 'pending',
           progress: 0,
@@ -159,37 +166,66 @@ export default function App() {
         newItems.push(imageItem);
       }
 
-      // Read dimensions in background
+      // Populate metadata in background
       newItems.forEach(async (item) => {
-        const dim = await getImageDimensions(item.file);
-        setImages((prev) =>
-          prev.map((it) => (it.id === item.id ? { ...it, width: dim.width, height: dim.height } : it))
-        );
+        if (item.mediaType === 'video') {
+          const [meta, thumb] = await Promise.all([
+            getVideoMetadata(item.file),
+            generateVideoThumbnail(item.file),
+          ]);
+          setImages((prev) =>
+            prev.map((it) =>
+              it.id === item.id
+                ? {
+                    ...it,
+                    width: meta.width,
+                    height: meta.height,
+                    duration: meta.duration,
+                    previewUrl: thumb || it.previewUrl,
+                  }
+                : it
+            )
+          );
+        } else {
+          const dim = await getImageDimensions(item.file);
+          setImages((prev) =>
+            prev.map((it) => (it.id === item.id ? { ...it, width: dim.width, height: dim.height } : it))
+          );
+        }
       });
 
       setImages((prev) => [...prev, ...newItems]);
 
       const summary = getFolderHierarchySummary(newItems);
+      const videoCount = newItems.filter((it) => it.mediaType === 'video').length;
+      const imageCount = newItems.length - videoCount;
+
       if (summary.distinctFoldersCount > 0) {
         const rootList = summary.rootFolders.slice(0, 3).join(', ');
         const extra = summary.rootFolders.length > 3 ? ` +${summary.rootFolders.length - 3} more` : '';
         addToast({
           type: 'success',
-          title: `Mapped ${newItems.length} images across ${summary.distinctFoldersCount} folder(s)`,
-          message: `Folder hierarchy preserved (${rootList}${extra}). Will mirror exactly in exported ZIP.`,
+          title: `Mapped ${newItems.length} items across ${summary.distinctFoldersCount} folder(s)`,
+          message: `Folder hierarchy preserved (${rootList}${extra}). Output archive will mirror nested directory trees.`,
           duration: 5000,
         });
       } else if (largeFiles.length > 0) {
         addToast({
           type: 'warning',
           title: 'Large files detected',
-          message: `${largeFiles.length} file(s) over 45 MB detected. In-browser processing may take slightly longer.`,
+          message: `${largeFiles.length} file(s) over 80 MB detected. In-browser processing may take slightly longer.`,
           duration: 6000,
         });
       } else {
+        const desc = videoCount > 0 && imageCount > 0
+          ? `${imageCount} image(s) and ${videoCount} video(s)`
+          : videoCount > 0
+          ? `${videoCount} video(s)`
+          : `${imageCount} image(s)`;
+
         addToast({
           type: 'info',
-          title: `Added ${newItems.length} ${newItems.length === 1 ? 'image' : 'images'}`,
+          title: `Added ${desc}`,
           message: 'Ready for batch compression.',
           duration: 3000,
         });
@@ -198,11 +234,11 @@ export default function App() {
     [addToast]
   );
 
-  // --- Remove Single Image ---
+  // --- Remove Single Media Item ---
   const handleRemoveImage = useCallback((id: string) => {
     setImages((prev) => {
       const target = prev.find((it) => it.id === id);
-      if (target && target.previewUrl) {
+      if (target && target.previewUrl && target.previewUrl.startsWith('blob:')) {
         URL.revokeObjectURL(target.previewUrl);
       }
       return prev.filter((it) => it.id !== id);
@@ -212,13 +248,15 @@ export default function App() {
   // --- Clear Queue ---
   const handleClearAll = useCallback(() => {
     images.forEach((it) => {
-      if (it.previewUrl) URL.revokeObjectURL(it.previewUrl);
+      if (it.previewUrl && it.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(it.previewUrl);
+      }
     });
     setImages([]);
     addToast({
       type: 'info',
       title: 'Queue Cleared',
-      message: 'All images removed from batch.',
+      message: 'All items removed from batch.',
       duration: 3000,
     });
   }, [images, addToast]);
@@ -234,7 +272,7 @@ export default function App() {
     });
   }, [addToast]);
 
-  // --- Compress Single Item ---
+  // --- Compress Single Item (Image or Video) ---
   const handleCompressItem = useCallback(
     async (item: ImageItem, currentSettings: CompressionSettings) => {
       setImages((prev) =>
@@ -244,32 +282,61 @@ export default function App() {
       );
 
       try {
-        const result = await compressSingleImage(item, currentSettings, (progress) => {
-          setImages((prev) =>
-            prev.map((it) => (it.id === item.id ? { ...it, progress } : it))
-          );
-        });
+        if (item.mediaType === 'video') {
+          const result = await compressSingleVideo(item, currentSettings, (progress) => {
+            setImages((prev) =>
+              prev.map((it) => (it.id === item.id ? { ...it, progress } : it))
+            );
+          });
 
-        setImages((prev) =>
-          prev.map((it) =>
-            it.id === item.id
-              ? {
-                  ...it,
-                  status: 'done',
-                  progress: 100,
-                  compressedBlob: result.blob,
-                  compressedSize: result.size,
-                  compressedFormat: result.format,
-                  outputFilename: result.outputFilename,
-                  outputRelativePath: result.outputRelativePath,
-                  compressedWidth: result.width,
-                  compressedHeight: result.height,
-                  warning: result.warning || null,
-                  error: null,
-                }
-              : it
-          )
-        );
+          setImages((prev) =>
+            prev.map((it) =>
+              it.id === item.id
+                ? {
+                    ...it,
+                    status: 'done',
+                    progress: 100,
+                    compressedBlob: result.blob,
+                    compressedSize: result.size,
+                    compressedFormat: result.format,
+                    outputFilename: result.outputFilename,
+                    outputRelativePath: result.outputRelativePath,
+                    compressedWidth: result.width,
+                    compressedHeight: result.height,
+                    warning: result.warning || null,
+                    error: null,
+                  }
+                : it
+            )
+          );
+        } else {
+          const result = await compressSingleImage(item, currentSettings, (progress) => {
+            setImages((prev) =>
+              prev.map((it) => (it.id === item.id ? { ...it, progress } : it))
+            );
+          });
+
+          setImages((prev) =>
+            prev.map((it) =>
+              it.id === item.id
+                ? {
+                    ...it,
+                    status: 'done',
+                    progress: 100,
+                    compressedBlob: result.blob,
+                    compressedSize: result.size,
+                    compressedFormat: result.format,
+                    outputFilename: result.outputFilename,
+                    outputRelativePath: result.outputRelativePath,
+                    compressedWidth: result.width,
+                    compressedHeight: result.height,
+                    warning: result.warning || null,
+                    error: null,
+                  }
+                : it
+            )
+          );
+        }
       } catch (err: any) {
         console.error(`Error compressing ${item.name}:`, err);
         setImages((prev) =>
@@ -298,8 +365,8 @@ export default function App() {
       if (validItems.length === 0) {
         addToast({
           type: 'warning',
-          title: 'No Compressed Images',
-          message: 'Please compress images before generating the ZIP.',
+          title: 'No Compressed Media',
+          message: 'Please compress items before generating the ZIP archive.',
         });
         return;
       }
@@ -333,7 +400,7 @@ export default function App() {
         addToast({
           type: 'success',
           title: 'ZIP Archive Downloaded',
-          message: `Saved ${formatBytes(savedBytes)} (${savedPercent}%) across ${zipResult.totalItems} images.`,
+          message: `Saved ${formatBytes(savedBytes)} (${savedPercent}%) across ${zipResult.totalItems} files.`,
           duration: 7000,
         });
       } catch (err: any) {
@@ -449,7 +516,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#050505] text-white font-sans selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-[#050505] text-slate-900 dark:text-white font-sans selection:bg-blue-600 selection:text-white transition-colors duration-200">
       {/* Top Header */}
       <Header
         darkMode={darkMode}
@@ -499,12 +566,12 @@ export default function App() {
               {/* Grid / Table Workspace Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest">
                     Active Queue ({images.length})
                   </span>
                 </div>
-                <span className="text-[10px] text-white/30 hidden sm:inline">
-                  Select card and press <kbd className="font-mono text-white/60 bg-white/5 px-1 py-0.5 rounded border border-white/10">Delete</kbd> to remove
+                <span className="text-[10px] text-slate-400 dark:text-white/30 hidden sm:inline">
+                  Select card and press <kbd className="font-mono text-slate-700 dark:text-white/60 bg-slate-200 dark:bg-white/5 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">Delete</kbd> to remove
                 </span>
               </div>
 
@@ -524,12 +591,12 @@ export default function App() {
                   ))}
                 </div>
               ) : (
-                <div className="bg-[#0c0c0c] border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+                <div className="bg-white dark:bg-[#0c0c0c] border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-xl transition-colors">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-white/10 bg-[#080808] text-[10px] font-bold text-white/40 uppercase tracking-widest">
-                          <th className="py-3 px-4">Image Details</th>
+                        <tr className="border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#080808] text-[10px] font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest">
+                          <th className="py-3 px-4">Media Details</th>
                           <th className="py-3 px-3">Original Size</th>
                           <th className="py-3 px-3">Compressed</th>
                           <th className="py-3 px-3">Reduction</th>

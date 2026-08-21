@@ -1,8 +1,8 @@
 import { ScannedFileItem } from './fileScanner';
 
 /**
- * Generates rich synthetic sample images with nested folder hierarchies
- * (inspired by watch and clock product series) directly on client canvas.
+ * Generates rich synthetic sample images and video clips with nested folder hierarchies
+ * directly on client canvas.
  */
 export async function generateSampleImages(withFolderStructure: boolean = true): Promise<ScannedFileItem[]> {
   const sampleDefs = [
@@ -94,7 +94,7 @@ export async function generateSampleImages(withFolderStructure: boolean = true):
     const ctx = canvas.getContext('2d');
 
     if (ctx) {
-      // Draw luxury background
+      // Draw background
       ctx.fillStyle = def.bgColor;
       ctx.fillRect(0, 0, def.width, def.height);
 
@@ -189,9 +189,115 @@ export async function generateSampleImages(withFolderStructure: boolean = true):
         file,
         relativePath: def.relativePath,
         folderPath: def.folderPath,
+        mediaType: 'image',
       });
     }
   }
 
+  // Generate a sample video clip if MediaRecorder is available
+  try {
+    const videoItem = await generateSampleVideoClip(withFolderStructure);
+    if (videoItem) {
+      results.push(videoItem);
+    }
+  } catch (err) {
+    console.warn('Could not generate synthetic sample video:', err);
+  }
+
   return results;
+}
+
+/**
+ * Generate synthetic animated sample video clip
+ */
+async function generateSampleVideoClip(withFolderStructure: boolean): Promise<ScannedFileItem | null> {
+  if (typeof MediaRecorder === 'undefined') return null;
+
+  const width = 1280;
+  const height = 720;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const stream = canvas.captureStream(30);
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9'
+    : 'video/webm';
+
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 });
+  const chunks: Blob[] = [];
+
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  return new Promise((resolve) => {
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const file = new File([blob], 'demo-motion-reel.webm', { type: 'video/webm' });
+      resolve({
+        file,
+        relativePath: withFolderStructure ? 'video-reels/demo-motion-reel.webm' : 'demo-motion-reel.webm',
+        folderPath: withFolderStructure ? 'video-reels' : undefined,
+        mediaType: 'video',
+      });
+    };
+
+    recorder.start();
+
+    // Render 60 animated frames (~2 seconds)
+    let frame = 0;
+    const totalFrames = 60;
+
+    const interval = setInterval(() => {
+      frame++;
+      const progress = frame / totalFrames;
+
+      // Dark futuristic background
+      ctx.fillStyle = '#0a0d14';
+      ctx.fillRect(0, 0, width, height);
+
+      // Rotating radial ring
+      const cx = width / 2;
+      const cy = height / 2;
+      const radius = 180 + Math.sin(progress * Math.PI * 4) * 20;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(progress * Math.PI * 2);
+
+      // Outer neon ring
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 1.5);
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 14;
+      ctx.stroke();
+
+      // Inner counter-rotating ring
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.7, 0, Math.PI);
+      ctx.strokeStyle = '#8b5cf6';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+
+      ctx.restore();
+
+      // Text Overlay
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('HIGH-PERFORMANCE MOTION DEMO', cx, 120);
+
+      ctx.fillStyle = '#60a5fa';
+      ctx.font = 'bold 24px monospace';
+      ctx.fillText(`Frame ${frame} / ${totalFrames} • Progress: ${Math.round(progress * 100)}%`, cx, height - 100);
+
+      if (frame >= totalFrames) {
+        clearInterval(interval);
+        recorder.stop();
+      }
+    }, 33);
+  });
 }
