@@ -26,6 +26,8 @@ export interface ImageItem {
   compressedHeight?: number;
   error?: string | null;
   warning?: string | null;
+  isBgRemoved?: boolean;
+  hasTouchUp?: boolean;
 }
 
 export type MediaItem = ImageItem;

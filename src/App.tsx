@@ -7,6 +7,7 @@ import { StatsBar } from './components/StatsBar';
 import { ImageCard } from './components/ImageCard';
 import { ImageTableRow } from './components/ImageTableRow';
 import { ImageComparisonModal } from './components/ImageComparisonModal';
+import { ImageTouchUpModal } from './components/ImageTouchUpModal';
 import { EmptyState } from './components/EmptyState';
 import { ToastContainer, ToastItem } from './components/ToastContainer';
 import { ImageItem, CompressionSettings, BatchStats, ViewMode } from './types';
@@ -74,6 +75,7 @@ export default function App() {
   const [isZipping, setIsZipping] = useState(false);
   const [zipProgress, setZipProgress] = useState(0);
   const [activePreviewItem, setActivePreviewItem] = useState<ImageItem | null>(null);
+  const [activeEditItem, setActiveEditItem] = useState<ImageItem | null>(null);
   const [isLoadingSamples, setIsLoadingSamples] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
@@ -557,19 +559,27 @@ export default function App() {
         (itemId, resultBlob) => {
           const previewUrl = URL.createObjectURL(resultBlob);
           setImages((prev) =>
-            prev.map((it) =>
-              it.id === itemId
-                ? {
-                    ...it,
-                    status: 'done',
-                    progress: 100,
-                    compressedBlob: resultBlob,
-                    compressedSize: resultBlob.size,
-                    compressedFormat: 'PNG',
-                    previewUrl,
-                  }
-                : it
-            )
+            prev.map((it) => {
+              if (it.id !== itemId) return it;
+              let outName = it.outputFilename || it.name;
+              outName = outName.replace(/\.[^/.]+$/, '') + '.png';
+              let outRel = it.outputRelativePath || it.relativePath;
+              if (outRel) {
+                outRel = outRel.replace(/\.[^/.]+$/, '') + '.png';
+              }
+              return {
+                ...it,
+                status: 'done',
+                progress: 100,
+                compressedBlob: resultBlob,
+                compressedSize: resultBlob.size,
+                compressedFormat: 'PNG',
+                outputFilename: outName,
+                outputRelativePath: outRel,
+                previewUrl,
+                isBgRemoved: true,
+              };
+            })
           );
           setBgRemovalItemsDone((prev) => prev + 1);
         },
@@ -618,6 +628,53 @@ export default function App() {
       });
     }
   }, [images, isRemovingBg, isProcessing, settings, addToast]);
+
+  // --- Handle Touch-Up Save ---
+  const handleSaveTouchUp = useCallback(
+    (itemId: string, updatedBlob: Blob) => {
+      const previewUrl = URL.createObjectURL(updatedBlob);
+      setImages((prev) =>
+        prev.map((it) => {
+          if (it.id !== itemId) return it;
+          if (it.previewUrl && it.previewUrl.startsWith('blob:')) {
+            try {
+              URL.revokeObjectURL(it.previewUrl);
+            } catch {
+              // ignore
+            }
+          }
+          let outName = it.outputFilename || it.name;
+          outName = outName.replace(/\.[^/.]+$/, '') + '.png';
+          let outRel = it.outputRelativePath || it.relativePath;
+          if (outRel) {
+            outRel = outRel.replace(/\.[^/.]+$/, '') + '.png';
+          }
+          return {
+            ...it,
+            status: 'done',
+            progress: 100,
+            compressedBlob: updatedBlob,
+            compressedSize: updatedBlob.size,
+            compressedFormat: 'PNG',
+            outputFilename: outName,
+            outputRelativePath: outRel,
+            previewUrl,
+            isBgRemoved: true,
+            hasTouchUp: true,
+            error: null,
+          };
+        })
+      );
+
+      addToast({
+        type: 'success',
+        title: 'Touch-Up Applied',
+        message: 'Cutout saved! Single download & batch ZIP will now include your edited image.',
+        duration: 4500,
+      });
+    },
+    [addToast]
+  );
 
   // --- Batch Stats Calculations ---
   const totalOriginalSize = images.reduce((acc, it) => acc + it.originalSize, 0);
@@ -715,6 +772,7 @@ export default function App() {
                       onDownload={downloadSingleFile}
                       onPreview={setActivePreviewItem}
                       onRetry={(it) => handleCompressItem(it, settings)}
+                      onEdit={setActiveEditItem}
                       disabled={isProcessing}
                     />
                   ))}
@@ -742,6 +800,7 @@ export default function App() {
                             onDownload={downloadSingleFile}
                             onPreview={setActivePreviewItem}
                             onRetry={(it) => handleCompressItem(it, settings)}
+                            onEdit={setActiveEditItem}
                             disabled={isProcessing}
                           />
                         ))}
@@ -780,6 +839,18 @@ export default function App() {
           item={activePreviewItem}
           onClose={() => setActivePreviewItem(null)}
           onDownload={downloadSingleFile}
+          onEdit={setActiveEditItem}
+        />
+      )}
+
+      {/* Cutout Touch-Up / Erase & Restore Editor Modal */}
+      {activeEditItem && (
+        <ImageTouchUpModal
+          item={activeEditItem}
+          onClose={() => setActiveEditItem(null)}
+          onSave={handleSaveTouchUp}
+          onDownloadSingle={downloadSingleFile}
+          settings={settings}
         />
       )}
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Download, Eye, AlertTriangle, CheckCircle, Loader2, RefreshCw, Play } from 'lucide-react';
+import { X, Download, Eye, AlertTriangle, CheckCircle, Loader2, RefreshCw, Play, Paintbrush } from 'lucide-react';
 import { ImageItem } from '../types';
 import { formatBytes, formatMimeBadge, calculateSavedPercentage, formatDuration } from '../utils/formatters';
 
@@ -9,6 +9,7 @@ interface ImageTableRowProps {
   onDownload: (item: ImageItem) => void;
   onPreview: (item: ImageItem) => void;
   onRetry: (item: ImageItem) => void;
+  onEdit?: (item: ImageItem) => void;
   disabled?: boolean;
 }
 
@@ -18,6 +19,7 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
   onDownload,
   onPreview,
   onRetry,
+  onEdit,
   disabled = false,
 }) => {
   const savedPercent =
@@ -44,11 +46,15 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
       <td className="py-3 px-4 whitespace-nowrap">
         <div className="flex items-center gap-3">
           <div
-            className="relative w-11 h-11 rounded-lg bg-slate-100 dark:bg-white/5 overflow-hidden shrink-0 border border-slate-200 dark:border-white/10 flex items-center justify-center cursor-pointer"
+            className={`relative w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-white/10 flex items-center justify-center cursor-pointer ${
+              item.isBgRemoved || item.hasTouchUp || item.compressedFormat === 'PNG'
+                ? 'bg-transparency-grid'
+                : 'bg-slate-100 dark:bg-white/5'
+            }`}
             onClick={() => (isDone || item.previewUrl) && onPreview(item)}
           >
             {item.previewUrl ? (
-              <img src={item.previewUrl} alt="" className="w-full h-full object-cover opacity-90" />
+              <img src={item.previewUrl} alt="" className="w-full h-full object-contain opacity-95" />
             ) : null}
 
             {isVideo && (
@@ -79,6 +85,16 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
               <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-white/10 text-slate-700 dark:text-white/70">
                 {formatMimeBadge(item.originalFormat, item.name.split('.').pop())}
               </span>
+              {item.hasTouchUp && (
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300 border border-fuchsia-300 dark:border-fuchsia-500/30">
+                  TOUCHED UP
+                </span>
+              )}
+              {item.isBgRemoved && !item.hasTouchUp && (
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/30">
+                  NO BG
+                </span>
+              )}
               {item.width ? (
                 <span className="text-[10px] text-slate-400 dark:text-white/30 font-mono">
                   {item.width}×{item.height}px
@@ -163,6 +179,22 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
       {/* 6. Actions */}
       <td className="py-3 px-4 text-right whitespace-nowrap">
         <div className="flex items-center justify-end gap-1.5">
+          {onEdit && !isVideo && (
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                item.hasTouchUp || item.isBgRemoved
+                  ? 'bg-fuchsia-50 hover:bg-fuchsia-100 dark:bg-fuchsia-500/20 dark:hover:bg-fuchsia-500/30 text-fuchsia-600 dark:text-fuchsia-400 border border-fuchsia-200 dark:border-fuchsia-500/30 shadow-xs'
+                  : 'text-slate-500 dark:text-white/40 hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:bg-slate-100 dark:hover:bg-white/10'
+              }`}
+              title="Edit Cutout / Touch Up (Erase & Restore brush)"
+              aria-label={`Edit cutout for ${item.name}`}
+            >
+              <Paintbrush className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {isDone && (
             <>
               <button

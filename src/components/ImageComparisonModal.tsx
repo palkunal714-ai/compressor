@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Download, ZoomIn, ZoomOut, ArrowLeftRight, HardDrive, Sparkles, Play, Pause, Video } from 'lucide-react';
+import { X, Download, ZoomIn, ZoomOut, ArrowLeftRight, HardDrive, Sparkles, Play, Pause, Video, Paintbrush } from 'lucide-react';
 import { ImageItem } from '../types';
 import { formatBytes, calculateSavedPercentage, formatDuration } from '../utils/formatters';
 
@@ -7,12 +7,14 @@ interface ImageComparisonModalProps {
   item: ImageItem | null;
   onClose: () => void;
   onDownload: (item: ImageItem) => void;
+  onEdit?: (item: ImageItem) => void;
 }
 
 export const ImageComparisonModal: React.FC<ImageComparisonModalProps> = ({
   item,
   onClose,
   onDownload,
+  onEdit,
 }) => {
   const [sliderPos, setSliderPos] = useState(50);
   const [zoom, setZoom] = useState(1);
@@ -148,6 +150,21 @@ export const ImageComparisonModal: React.FC<ImageComparisonModalProps> = ({
               </button>
             )}
 
+            {!isVideo && onEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEdit(item);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm shadow-fuchsia-500/20 cursor-pointer"
+                title="Edit Cutout / Touch Up (Erase & Restore brush)"
+              >
+                <Paintbrush className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Edit Cutout</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => onDownload(item)}
@@ -169,7 +186,9 @@ export const ImageComparisonModal: React.FC<ImageComparisonModalProps> = ({
         </div>
 
         {/* Comparison Area */}
-        <div className="relative flex-1 min-h-[380px] max-h-[60vh] bg-slate-950 dark:bg-[#050505] flex items-center justify-center overflow-hidden select-none">
+        <div className={`relative flex-1 min-h-[380px] max-h-[60vh] flex items-center justify-center overflow-hidden select-none ${
+          item.isBgRemoved || item.compressedFormat === 'PNG' ? 'bg-transparency-grid' : 'bg-slate-950 dark:bg-[#050505]'
+        }`}>
           {isVideo ? (
             /* Video Side-by-Side Synced Comparison */
             <div className="w-full h-full p-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-center justify-center overflow-y-auto">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Download, Eye, CheckCircle, Loader2, ArrowRight, Video, Play } from 'lucide-react';
+import { X, Download, Eye, CheckCircle, Loader2, ArrowRight, Video, Play, Paintbrush } from 'lucide-react';
 import { ImageItem } from '../types';
 import { formatBytes, formatMimeBadge, calculateSavedPercentage, formatDuration } from '../utils/formatters';
 
@@ -9,6 +9,7 @@ interface ImageCardProps {
   onDownload: (item: ImageItem) => void;
   onPreview: (item: ImageItem) => void;
   onRetry: (item: ImageItem) => void;
+  onEdit?: (item: ImageItem) => void;
   disabled?: boolean;
 }
 
@@ -18,6 +19,7 @@ export const ImageCard: React.FC<ImageCardProps> = React.memo(({
   onDownload,
   onPreview,
   onRetry,
+  onEdit,
   disabled = false,
 }) => {
   const savedPercent =
@@ -51,14 +53,18 @@ export const ImageCard: React.FC<ImageCardProps> = React.memo(({
       <div className="flex items-start gap-3.5">
         {/* Thumbnail preview */}
         <div
-          className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-100 dark:bg-white/5 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-white/10 relative flex items-center justify-center cursor-pointer group/thumb"
+          className={`w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden shrink-0 border border-slate-200 dark:border-white/10 relative flex items-center justify-center cursor-pointer group/thumb ${
+            item.isBgRemoved || item.hasTouchUp || item.compressedFormat === 'PNG'
+              ? 'bg-transparency-grid'
+              : 'bg-slate-100 dark:bg-white/5'
+          }`}
           onClick={() => (isDone || item.previewUrl) && onPreview(item)}
         >
           {item.previewUrl ? (
             <img
               src={item.previewUrl}
               alt={item.name}
-              className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+              className="w-full h-full object-contain opacity-95 group-hover:opacity-100 transition-opacity"
               loading="lazy"
             />
           ) : (
@@ -115,26 +121,38 @@ export const ImageCard: React.FC<ImageCardProps> = React.memo(({
             </h3>
 
             {/* Status Pill */}
-            {isDone && (
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold flex items-center gap-0.5 shrink-0">
-                <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> DONE
-              </span>
-            )}
-            {isProcessing && (
-              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-mono font-bold shrink-0">
-                {item.progress}%
-              </span>
-            )}
-            {isError && (
-              <span className="text-[10px] text-red-600 dark:text-red-400 font-mono font-bold shrink-0">
-                ERROR
-              </span>
-            )}
-            {item.status === 'pending' && (
-              <span className="text-[10px] text-slate-400 dark:text-white/30 font-mono shrink-0">
-                QUEUED
-              </span>
-            )}
+            <div className="flex items-center gap-1 shrink-0">
+              {item.hasTouchUp && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300 font-mono font-bold border border-fuchsia-300 dark:border-fuchsia-500/30">
+                  TOUCHED UP
+                </span>
+              )}
+              {item.isBgRemoved && !item.hasTouchUp && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-mono font-bold border border-purple-300 dark:border-purple-500/30">
+                  NO BG
+                </span>
+              )}
+              {isDone && (
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold flex items-center gap-0.5">
+                  <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> DONE
+                </span>
+              )}
+              {isProcessing && (
+                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-mono font-bold">
+                  {item.progress}%
+                </span>
+              )}
+              {isError && (
+                <span className="text-[10px] text-red-600 dark:text-red-400 font-mono font-bold">
+                  ERROR
+                </span>
+              )}
+              {item.status === 'pending' && (
+                <span className="text-[10px] text-slate-400 dark:text-white/30 font-mono">
+                  QUEUED
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Size Metrics */}
@@ -223,27 +241,45 @@ export const ImageCard: React.FC<ImageCardProps> = React.memo(({
             <X className="w-4 h-4" />
           </button>
 
-          {/* Done actions */}
-          {isDone && (
-            <div className="flex items-center gap-1 mt-auto">
+          {/* Action buttons (Touch-Up, Preview, Download) */}
+          <div className="flex items-center gap-1 mt-auto">
+            {onEdit && !isVideo && (
               <button
                 type="button"
-                onClick={() => onPreview(item)}
-                className="p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-white/70 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
-                title="Preview / Compare"
+                onClick={() => onEdit(item)}
+                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                  item.hasTouchUp || item.isBgRemoved
+                    ? 'bg-fuchsia-50 hover:bg-fuchsia-100 dark:bg-fuchsia-500/20 dark:hover:bg-fuchsia-500/30 text-fuchsia-600 dark:text-fuchsia-400 border border-fuchsia-200 dark:border-fuchsia-500/30 shadow-xs'
+                    : 'bg-slate-100 hover:bg-fuchsia-50 dark:bg-white/5 dark:hover:bg-fuchsia-500/10 text-slate-600 dark:text-white/70 hover:text-fuchsia-600 dark:hover:text-fuchsia-400'
+                }`}
+                title="Edit Cutout / Touch Up (Erase & Restore brush)"
+                aria-label={`Edit cutout for ${item.name}`}
               >
-                <Eye className="w-3.5 h-3.5" />
+                <Paintbrush className="w-3.5 h-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={() => onDownload(item)}
-                className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-600/20 hover:bg-blue-600 text-blue-600 dark:text-blue-400 hover:text-white transition-colors cursor-pointer"
-                title="Download single file"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
+            )}
+
+            {isDone && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onPreview(item)}
+                  className="p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-white/70 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                  title="Preview / Compare"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDownload(item)}
+                  className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-600/20 hover:bg-blue-600 text-blue-600 dark:text-blue-400 hover:text-white transition-colors cursor-pointer"
+                  title="Download single file"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
