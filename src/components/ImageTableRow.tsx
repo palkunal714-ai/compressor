@@ -12,7 +12,7 @@ interface ImageTableRowProps {
   disabled?: boolean;
 }
 
-export const ImageTableRow: React.FC<ImageTableRowProps> = ({
+export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
   item,
   onRemove,
   onDownload,
@@ -197,4 +197,4 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = ({
       </td>
     </tr>
   );
-};
+});

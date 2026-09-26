@@ -141,7 +141,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
 
         {/* Action Button Group */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end flex-wrap">
-          {isProcessing && onCancelProcessing && (
+          {(isProcessing || isRemovingBg) && onCancelProcessing && (
             <button
               type="button"
               onClick={onCancelProcessing}

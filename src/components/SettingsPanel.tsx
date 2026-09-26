@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sliders, RefreshCw, Sparkles, Shield, Maximize2, Cpu, ChevronDown, ChevronUp, Video, VolumeX, Volume2 } from 'lucide-react';
+import { Sliders, RefreshCw, Sparkles, Shield, Maximize2, Cpu, ChevronDown, ChevronUp, Video, VolumeX, Volume2, Eraser, Zap, Brain } from 'lucide-react';
 import { CompressionSettings } from '../types';
 
 interface SettingsPanelProps {
@@ -372,6 +372,110 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   />
                 </button>
               </div>
+            </div>
+          </section>
+
+          {/* SECTION 4: Background Removal Settings */}
+          <section className="border-t border-slate-200 dark:border-white/5 pt-4">
+            <div className="flex items-center gap-1.5 mb-3.5">
+              <Eraser className="w-3.5 h-3.5 text-fuchsia-500" />
+              <label className="text-[10px] font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest block">
+                BG Removal Engine
+              </label>
+            </div>
+
+            <div className="space-y-3">
+              {/* Engine Switcher */}
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/60 dark:bg-white/5 rounded-xl border border-slate-300/50 dark:border-white/5">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onChangeSettings({ ...settings, bgEngine: 'studio' })}
+                  className={`flex flex-col items-center py-2 px-2 rounded-lg text-center transition-all cursor-pointer ${
+                    (settings.bgEngine ?? 'studio') === 'studio'
+                      ? 'bg-white dark:bg-white/10 text-fuchsia-600 dark:text-fuchsia-400 font-bold shadow-xs'
+                      : 'text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-[11px]">
+                    <Zap className="w-3 h-3 text-amber-500" />
+                    <span>Studio Fast</span>
+                  </div>
+                  <span className="text-[9px] opacity-70">~50ms / image</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onChangeSettings({ ...settings, bgEngine: 'ai' })}
+                  className={`flex flex-col items-center py-2 px-2 rounded-lg text-center transition-all cursor-pointer ${
+                    settings.bgEngine === 'ai'
+                      ? 'bg-white dark:bg-white/10 text-fuchsia-600 dark:text-fuchsia-400 font-bold shadow-xs'
+                      : 'text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-[11px]">
+                    <Brain className="w-3 h-3 text-fuchsia-500" />
+                    <span>AI Model</span>
+                  </div>
+                  <span className="text-[9px] opacity-70">Complex scenes</span>
+                </button>
+              </div>
+
+              {/* Studio Mode Controls */}
+              {(settings.bgEngine ?? 'studio') === 'studio' ? (
+                <div className="space-y-2.5 p-2.5 rounded-lg bg-white dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
+                  <div className="text-[10px] text-slate-500 dark:text-white/50 leading-tight">
+                    ⚡ <strong className="text-slate-700 dark:text-white/80">300x faster</strong>: Automatically detects perimeter white/studio backdrops with anti-aliased edge feathering. Perfect for product catalog photos.
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] mb-1">
+                      <span className="text-slate-600 dark:text-white/70">Color Tolerance</span>
+                      <span className="font-mono text-fuchsia-600 dark:text-fuchsia-400 font-bold">{settings.bgTolerance ?? 32}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="70"
+                      value={settings.bgTolerance ?? 32}
+                      disabled={disabled}
+                      onChange={(e) =>
+                        onChangeSettings({
+                          ...settings,
+                          bgTolerance: parseInt(e.target.value, 10) || 32,
+                        })
+                      }
+                      className="w-full accent-fuchsia-600 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* AI Neural Net Controls */
+                <div className="space-y-2.5 p-2.5 rounded-lg bg-white dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
+                  <div className="text-[10px] text-slate-500 dark:text-white/50 leading-tight">
+                    🧠 Deep learning U-Net (ISNet). Downloads neural weights and runs in-browser. Serialized processing to prevent memory lockup.
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-800 dark:text-white/90 font-medium">Model Precision</span>
+                    <select
+                      disabled={disabled}
+                      value={settings.bgAiModel ?? 'small'}
+                      onChange={(e) =>
+                        onChangeSettings({
+                          ...settings,
+                          bgAiModel: e.target.value as 'small' | 'medium',
+                        })
+                      }
+                      className="bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-slate-800 dark:text-white text-[11px] font-mono px-2 py-1 rounded outline-none cursor-pointer focus:border-fuchsia-500"
+                    >
+                      <option value="small" className="bg-white dark:bg-[#111]">INT8 Quantized (Faster)</option>
+                      <option value="medium" className="bg-white dark:bg-[#111]">FP16 (High Quality)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         </div>

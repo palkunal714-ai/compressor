@@ -40,6 +40,12 @@ export interface CompressionSettings {
   muteAudio: boolean; // default false (for videos)
   concurrency: number; // default 4
   stripExif: boolean;
+  // Background Removal Engine Settings
+  bgEngine: 'studio' | 'ai'; // 'studio' (instant flood-fill/feathering ~50ms) or 'ai' (ISNet neural net)
+  bgTolerance: number; // 10 - 80 (default 32)
+  bgFeather: number; // 0 - 4 (default 1.5)
+  bgAiModel: 'small' | 'medium'; // 'small' = isnet_quint8 (INT8 fast), 'medium' = isnet_fp16
+  bgAiDevice: 'gpu' | 'cpu'; // default 'gpu' (uses WebGPU if available)
 }
 
 export interface BatchStats {

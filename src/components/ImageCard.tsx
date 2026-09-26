@@ -12,7 +12,7 @@ interface ImageCardProps {
   disabled?: boolean;
 }
 
-export const ImageCard: React.FC<ImageCardProps> = ({
+export const ImageCard: React.FC<ImageCardProps> = React.memo(({
   item,
   onRemove,
   onDownload,
@@ -248,4 +248,4 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       </div>
     </div>
   );
-};
+});

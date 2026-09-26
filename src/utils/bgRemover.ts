@@ -1,25 +1,53 @@
 import { removeBackground } from '@imgly/background-removal';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { ImageItem } from '../types';
+import { ImageItem, CompressionSettings } from '../types';
+import { removeStudioBackground } from './fastBgRemover';
+
+export interface BgRemovalBatchOptions {
+  engine?: 'studio' | 'ai';
+  tolerance?: number;
+  feather?: number;
+  aiModel?: 'small' | 'medium';
+  aiDevice?: 'gpu' | 'cpu';
+  concurrency?: number;
+}
 
 /**
  * Remove background from a single image file, returning a transparent PNG blob.
- * Uses @imgly/background-removal which runs an AI segmentation model entirely in-browser.
+ * Automatically chooses between ultra-fast Studio mode (canvas edge-flood) and deep learning AI (ISNet).
  */
 export async function removeImageBackground(
   file: File | Blob,
+  options: BgRemovalBatchOptions = {},
   onProgress?: (progress: number) => void
 ): Promise<Blob> {
+  const engine = options.engine ?? 'studio';
+
+  if (engine === 'studio') {
+    if (onProgress) onProgress(30);
+    const blob = await removeStudioBackground(file, {
+      tolerance: options.tolerance ?? 32,
+      feather: options.feather ?? 1.5,
+      defringe: true,
+    });
+    if (onProgress) onProgress(100);
+    return blob;
+  }
+
+  // AI Deep Learning mode (@imgly)
+  const modelName = options.aiModel === 'medium' ? 'isnet_fp16' : 'isnet_quint8';
   const blob = await removeBackground(file, {
+    model: modelName,
+    device: options.aiDevice ?? 'gpu',
     progress: (key: string, current: number, total: number) => {
       if (onProgress && total > 0) {
-        // The library reports multiple phases; we normalize to 0–100
         const percent = Math.round((current / total) * 100);
         onProgress(Math.min(99, percent));
       }
     },
   });
+
   if (onProgress) onProgress(100);
   return blob;
 }
@@ -30,7 +58,7 @@ export async function removeImageBackground(
  */
 export async function batchRemoveBgAndZip(
   items: ImageItem[],
-  concurrency: number,
+  settings: Partial<CompressionSettings> = {},
   onItemStart?: (itemId: string) => void,
   onItemProgress?: (itemId: string, progress: number) => void,
   onItemDone?: (itemId: string, resultBlob: Blob) => void,
@@ -48,9 +76,16 @@ export async function batchRemoveBgAndZip(
   }
 
   const results: Map<string, { blob: Blob; path: string }> = new Map();
+  const engine = settings.bgEngine ?? 'studio';
 
-  // Process items with concurrency
-  const poolSize = Math.max(1, Math.min(4, concurrency)); // Cap at 4 for bg removal (heavy)
+  // Concurrency strategy:
+  // For Studio mode: Canvas 2D is lightweight and can run 4 parallel workers.
+  // For AI mode: MUST be strictly 1 worker. ONNX Web does not support concurrent inference
+  // on the same session (will throw "Session already started" or crash with memory corruption).
+  const poolSize = engine === 'studio'
+    ? Math.max(1, Math.min(6, settings.concurrency ?? 4))
+    : 1;
+
   let currentIndex = 0;
 
   async function worker(): Promise<void> {
@@ -62,9 +97,19 @@ export async function batchRemoveBgAndZip(
       if (onItemStart) onItemStart(item.id);
 
       try {
-        const resultBlob = await removeImageBackground(item.file, (progress) => {
-          if (onItemProgress) onItemProgress(item.id, progress);
-        });
+        const resultBlob = await removeImageBackground(
+          item.file,
+          {
+            engine,
+            tolerance: settings.bgTolerance ?? 32,
+            feather: settings.bgFeather ?? 1.5,
+            aiModel: settings.bgAiModel ?? 'small',
+            aiDevice: settings.bgAiDevice ?? 'gpu',
+          },
+          (progress) => {
+            if (onItemProgress) onItemProgress(item.id, progress);
+          }
+        );
 
         // Build the output path: keep folder structure, force PNG extension for transparency
         let outputPath = (
@@ -82,6 +127,9 @@ export async function batchRemoveBgAndZip(
 
         results.set(item.id, { blob: resultBlob, path: outputPath });
         if (onItemDone) onItemDone(item.id, resultBlob);
+
+        // Micro-yield to browser event loop so UI stays 60fps responsive
+        await new Promise((r) => setTimeout(r, 12));
       } catch (err: any) {
         console.error(`BG removal failed for ${item.name}:`, err);
         if (onItemError) onItemError(item.id, err?.message || 'Background removal failed');
@@ -94,6 +142,10 @@ export async function batchRemoveBgAndZip(
     () => worker()
   );
   await Promise.all(workers);
+
+  if (isCancelled?.()) {
+    throw new Error('Background removal was stopped by user.');
+  }
 
   // Package into ZIP
   if (results.size === 0) {

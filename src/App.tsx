@@ -28,6 +28,11 @@ const DEFAULT_SETTINGS: CompressionSettings = {
   muteAudio: false,
   concurrency: 4,
   stripExif: true,
+  bgEngine: 'studio',
+  bgTolerance: 32,
+  bgFeather: 1.5,
+  bgAiModel: 'small',
+  bgAiDevice: 'gpu',
 };
 
 const SETTINGS_STORAGE_KEY = 'bulk_compressor_settings_v2';
@@ -472,6 +477,7 @@ export default function App() {
   const handleCancelProcessing = useCallback(() => {
     isCancelledRef.current = true;
     setIsProcessing(false);
+    setIsRemovingBg(false);
     addToast({
       type: 'info',
       title: 'Batch Cancelled',
@@ -511,36 +517,67 @@ export default function App() {
 
     if (isRemovingBg || isProcessing) return;
 
+    isCancelledRef.current = false;
     setIsRemovingBg(true);
     setBgRemovalProgress(0);
     setBgRemovalItemsDone(0);
     setBgRemovalItemsTotal(imageOnlyItems.length);
 
+    const isStudio = (settings.bgEngine ?? 'studio') === 'studio';
     addToast({
       type: 'info',
-      title: 'Background Removal Started',
-      message: `Processing ${imageOnlyItems.length} image(s). The AI model will load on first use (~30s).`,
-      duration: 6000,
+      title: isStudio ? '⚡ Fast Studio BG Removal' : '🧠 AI Neural BG Removal',
+      message: isStudio
+        ? `Processing ${imageOnlyItems.length} image(s) with instant perimeter flood-fill & anti-aliasing...`
+        : `Processing ${imageOnlyItems.length} image(s) with deep learning model in-browser...`,
+      duration: 5000,
     });
+
+    let lastProgressUpdate = 0;
 
     try {
       const result = await batchRemoveBgAndZip(
         images,
-        settings.concurrency,
+        settings,
         // onItemStart
         (itemId) => {
-          setBgRemovalProgress(0);
+          setImages((prev) =>
+            prev.map((it) => (it.id === itemId ? { ...it, status: 'processing', progress: 0 } : it))
+          );
         },
         // onItemProgress
         (itemId, progress) => {
-          setBgRemovalProgress(progress);
+          const now = performance.now();
+          if (now - lastProgressUpdate > 120 || progress >= 99) {
+            lastProgressUpdate = now;
+            setBgRemovalProgress(progress);
+          }
         },
         // onItemDone
         (itemId, resultBlob) => {
+          const previewUrl = URL.createObjectURL(resultBlob);
+          setImages((prev) =>
+            prev.map((it) =>
+              it.id === itemId
+                ? {
+                    ...it,
+                    status: 'done',
+                    progress: 100,
+                    compressedBlob: resultBlob,
+                    compressedSize: resultBlob.size,
+                    compressedFormat: 'PNG',
+                    previewUrl,
+                  }
+                : it
+            )
+          );
           setBgRemovalItemsDone((prev) => prev + 1);
         },
         // onItemError
         (itemId, error) => {
+          setImages((prev) =>
+            prev.map((it) => (it.id === itemId ? { ...it, status: 'error', error } : it))
+          );
           setBgRemovalItemsDone((prev) => prev + 1);
         },
         // onZipProgress
@@ -575,12 +612,12 @@ export default function App() {
       console.error('BG removal failed:', err);
       setIsRemovingBg(false);
       addToast({
-        type: 'error',
-        title: 'Background Removal Failed',
+        type: err?.message?.includes('stopped') ? 'info' : 'error',
+        title: err?.message?.includes('stopped') ? 'Batch Cancelled' : 'Background Removal Failed',
         message: err?.message || 'An error occurred during background removal.',
       });
     }
-  }, [images, isRemovingBg, isProcessing, settings.concurrency, addToast]);
+  }, [images, isRemovingBg, isProcessing, settings, addToast]);
 
   // --- Batch Stats Calculations ---
   const totalOriginalSize = images.reduce((acc, it) => acc + it.originalSize, 0);
