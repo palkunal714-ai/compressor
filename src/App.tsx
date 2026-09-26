@@ -16,6 +16,7 @@ import { compressSingleVideo, generateVideoThumbnail, getVideoMetadata } from '.
 import { createAndDownloadZip, downloadSingleFile } from './utils/zipPackager';
 import { generateSampleImages } from './utils/sampleGenerator';
 import { ScannedFileItem, extractFolderPath, getFolderHierarchySummary, isValidMediaFile } from './utils/fileScanner';
+import { batchRemoveBgAndZip } from './utils/bgRemover';
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   quality: 80,
@@ -70,6 +71,12 @@ export default function App() {
   const [activePreviewItem, setActivePreviewItem] = useState<ImageItem | null>(null);
   const [isLoadingSamples, setIsLoadingSamples] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  // Background removal state
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
+  const [bgRemovalProgress, setBgRemovalProgress] = useState(0);
+  const [bgRemovalItemsDone, setBgRemovalItemsDone] = useState(0);
+  const [bgRemovalItemsTotal, setBgRemovalItemsTotal] = useState(0);
 
   const isCancelledRef = useRef(false);
 
@@ -490,6 +497,91 @@ export default function App() {
     }
   }, [handleFilesSelected, addToast]);
 
+  // --- Background Removal & ZIP ---
+  const handleRemoveBgAndZip = useCallback(async () => {
+    const imageOnlyItems = images.filter((it) => it.mediaType === 'image');
+    if (imageOnlyItems.length === 0) {
+      addToast({
+        type: 'warning',
+        title: 'No Images Found',
+        message: 'Background removal only works on images. Add some images to the queue first.',
+      });
+      return;
+    }
+
+    if (isRemovingBg || isProcessing) return;
+
+    setIsRemovingBg(true);
+    setBgRemovalProgress(0);
+    setBgRemovalItemsDone(0);
+    setBgRemovalItemsTotal(imageOnlyItems.length);
+
+    addToast({
+      type: 'info',
+      title: 'Background Removal Started',
+      message: `Processing ${imageOnlyItems.length} image(s). The AI model will load on first use (~30s).`,
+      duration: 6000,
+    });
+
+    try {
+      const result = await batchRemoveBgAndZip(
+        images,
+        settings.concurrency,
+        // onItemStart
+        (itemId) => {
+          setBgRemovalProgress(0);
+        },
+        // onItemProgress
+        (itemId, progress) => {
+          setBgRemovalProgress(progress);
+        },
+        // onItemDone
+        (itemId, resultBlob) => {
+          setBgRemovalItemsDone((prev) => prev + 1);
+        },
+        // onItemError
+        (itemId, error) => {
+          setBgRemovalItemsDone((prev) => prev + 1);
+        },
+        // onZipProgress
+        (percent) => {
+          setBgRemovalProgress(percent);
+        },
+        // isCancelled
+        () => isCancelledRef.current
+      );
+
+      setIsRemovingBg(false);
+
+      // Confetti celebration
+      try {
+        confetti({
+          particleCount: 100,
+          spread: 80,
+          origin: { y: 0.7 },
+          colors: ['#d946ef', '#a855f7', '#ec4899', '#f472b6'],
+        });
+      } catch {
+        // ignore
+      }
+
+      addToast({
+        type: 'success',
+        title: 'Background Removed & ZIP Downloaded',
+        message: `${result.totalItems} transparent PNG(s) packaged into ${result.filename}`,
+        duration: 7000,
+      });
+    } catch (err: any) {
+      console.error('BG removal failed:', err);
+      setIsRemovingBg(false);
+      addToast({
+        type: 'error',
+        title: 'Background Removal Failed',
+        message: err?.message || 'An error occurred during background removal.',
+      });
+    }
+  }, [images, isRemovingBg, isProcessing, settings.concurrency, addToast]);
+
   // --- Batch Stats Calculations ---
   const totalOriginalSize = images.reduce((acc, it) => acc + it.originalSize, 0);
   const doneImages = images.filter((it) => it.status === 'done' && it.compressedSize !== null);
@@ -637,6 +729,11 @@ export default function App() {
           onCancelProcessing={handleCancelProcessing}
           isZipping={isZipping}
           zipProgress={zipProgress}
+          onRemoveBgAndZip={handleRemoveBgAndZip}
+          isRemovingBg={isRemovingBg}
+          bgRemovalProgress={bgRemovalProgress}
+          bgRemovalItemsDone={bgRemovalItemsDone}
+          bgRemovalItemsTotal={bgRemovalItemsTotal}
         />
       )}
 

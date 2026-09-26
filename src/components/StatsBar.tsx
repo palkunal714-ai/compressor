@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Loader2, Sparkles, XCircle } from 'lucide-react';
+import { Download, Loader2, Sparkles, XCircle, Eraser } from 'lucide-react';
 import { BatchStats } from '../types';
 import { formatBytes } from '../utils/formatters';
 
@@ -12,6 +12,12 @@ interface StatsBarProps {
   onCancelProcessing?: () => void;
   isZipping?: boolean;
   zipProgress?: number;
+  // Background removal props
+  onRemoveBgAndZip?: () => void;
+  isRemovingBg?: boolean;
+  bgRemovalProgress?: number;
+  bgRemovalItemsDone?: number;
+  bgRemovalItemsTotal?: number;
 }
 
 export const StatsBar: React.FC<StatsBarProps> = ({
@@ -23,6 +29,12 @@ export const StatsBar: React.FC<StatsBarProps> = ({
   onCancelProcessing,
   isZipping = false,
   zipProgress = 0,
+  // BG removal
+  onRemoveBgAndZip,
+  isRemovingBg = false,
+  bgRemovalProgress = 0,
+  bgRemovalItemsDone = 0,
+  bgRemovalItemsTotal = 0,
 }) => {
   const {
     totalOriginalSize,
@@ -37,6 +49,9 @@ export const StatsBar: React.FC<StatsBarProps> = ({
 
   const progressPercent = totalCount > 0 ? Math.round((processedCount / totalCount) * 100) : 0;
   const hasCompressedItems = processedCount > 0 && totalCompressedSize > 0;
+
+  // Determine if any heavy operation is running
+  const anyBusy = isProcessing || isZipping || isRemovingBg;
 
   return (
     <div className="sticky bottom-0 z-30 w-full bg-white/95 dark:bg-[#0a0a0a]/95 border-t border-slate-200 dark:border-white/10 px-4 sm:px-8 py-4 text-slate-900 dark:text-white shadow-2xl backdrop-blur-md transition-colors">
@@ -88,26 +103,44 @@ export const StatsBar: React.FC<StatsBarProps> = ({
           {/* Global Progress Bar */}
           <div className="w-36 sm:w-48 flex flex-col">
             <div className="flex justify-between text-[9px] text-slate-500 dark:text-white/40 mb-1.5 uppercase font-bold tracking-widest">
-              <span>Batch Progress</span>
-              <span className="font-mono">{isZipping ? `${zipProgress}%` : `${progressPercent}%`}</span>
+              <span>{isRemovingBg ? 'BG Removal' : 'Batch Progress'}</span>
+              <span className="font-mono">
+                {isRemovingBg
+                  ? `${bgRemovalItemsDone}/${bgRemovalItemsTotal}`
+                  : isZipping
+                  ? `${zipProgress}%`
+                  : `${progressPercent}%`}
+              </span>
             </div>
             <div className="h-1.5 w-full bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-300 ${
-                  isCompleted
+                  isRemovingBg
+                    ? 'bg-fuchsia-500 shadow-[0_0_10px_rgba(217,70,239,0.5)]'
+                    : isCompleted
                     ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
                     : isZipping
                     ? 'bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]'
                     : 'bg-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.4)]'
                 }`}
-                style={{ width: `${isZipping ? zipProgress : progressPercent}%` }}
+                style={{
+                  width: `${
+                    isRemovingBg
+                      ? bgRemovalItemsTotal > 0
+                        ? Math.round((bgRemovalItemsDone / bgRemovalItemsTotal) * 100)
+                        : 0
+                      : isZipping
+                      ? zipProgress
+                      : progressPercent
+                  }%`,
+                }}
               />
             </div>
           </div>
         </div>
 
         {/* Action Button Group */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end flex-wrap">
           {isProcessing && onCancelProcessing && (
             <button
               type="button"
@@ -123,9 +156,9 @@ export const StatsBar: React.FC<StatsBarProps> = ({
             <button
               id="download-zip-btn"
               type="button"
-              disabled={isZipping}
+              disabled={anyBusy}
               onClick={onDownloadZip}
-              className="px-6 py-3 rounded-xl bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-900 dark:text-white font-bold text-xs sm:text-sm border border-slate-300 dark:border-white/10 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+              className="px-6 py-3 rounded-xl bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-900 dark:text-white font-bold text-xs sm:text-sm border border-slate-300 dark:border-white/10 transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-40 disabled:pointer-events-none"
             >
               {isZipping ? (
                 <>
@@ -141,11 +174,34 @@ export const StatsBar: React.FC<StatsBarProps> = ({
             </button>
           )}
 
+          {/* Remove BG & ZIP Button */}
+          {onRemoveBgAndZip && (
+            <button
+              id="remove-bg-btn"
+              type="button"
+              disabled={anyBusy || totalCount === 0}
+              onClick={onRemoveBgAndZip}
+              className="w-full sm:w-auto bg-fuchsia-600 hover:bg-fuchsia-500 active:bg-fuchsia-700 text-white px-5 py-3 rounded-xl font-bold text-xs sm:text-sm shadow-xl shadow-fuchsia-600/20 hover:shadow-fuchsia-500/30 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+            >
+              {isRemovingBg ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Removing BG ({bgRemovalItemsDone}/{bgRemovalItemsTotal})...</span>
+                </>
+              ) : (
+                <>
+                  <Eraser className="w-4 h-4" />
+                  <span>Remove BG & ZIP</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Primary Action Button */}
           <button
             id="compress-and-download-btn"
             type="button"
-            disabled={isProcessing || isZipping || totalCount === 0}
+            disabled={anyBusy || totalCount === 0}
             onClick={onCompressAndDownload}
             className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white px-7 py-3 rounded-xl font-bold text-xs sm:text-sm shadow-xl shadow-blue-600/20 hover:shadow-blue-500/30 flex items-center justify-center gap-2.5 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
           >
