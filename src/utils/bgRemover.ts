@@ -64,7 +64,8 @@ export async function batchRemoveBgAndZip(
   onItemDone?: (itemId: string, resultBlob: Blob) => void,
   onItemError?: (itemId: string, error: string) => void,
   onZipProgress?: (percent: number) => void,
-  isCancelled?: () => boolean
+  isCancelled?: () => boolean,
+  autoDownloadZip: boolean = false
 ): Promise<{ success: boolean; filename: string; totalItems: number }> {
   // Filter to only images (bg removal doesn't apply to video)
   const imageItems = items.filter(
@@ -147,73 +148,84 @@ export async function batchRemoveBgAndZip(
     throw new Error('Background removal was stopped by user.');
   }
 
-  // Package into ZIP
   if (results.size === 0) {
     throw new Error('All background removal attempts failed. No images to package.');
   }
 
-  const zip = new JSZip();
-  const pathCountMap = new Map<string, number>();
+  // Only package and auto-download ZIP if explicitly requested
+  if (autoDownloadZip) {
+    const zip = new JSZip();
+    const pathCountMap = new Map<string, number>();
 
-  for (const [, { blob, path }] of results) {
-    let targetPath = path;
+    for (const [, { blob, path }] of results) {
+      let targetPath = path;
 
-    // Handle potential duplicate paths
-    if (pathCountMap.has(targetPath)) {
-      const count = pathCountMap.get(targetPath)! + 1;
-      pathCountMap.set(targetPath, count);
-      const dotIdx = targetPath.lastIndexOf('.');
-      if (dotIdx !== -1) {
-        targetPath = `${targetPath.substring(0, dotIdx)} (${count})${targetPath.substring(dotIdx)}`;
+      // Handle potential duplicate paths
+      if (pathCountMap.has(targetPath)) {
+        const count = pathCountMap.get(targetPath)! + 1;
+        pathCountMap.set(targetPath, count);
+        const dotIdx = targetPath.lastIndexOf('.');
+        if (dotIdx !== -1) {
+          targetPath = `${targetPath.substring(0, dotIdx)} (${count})${targetPath.substring(dotIdx)}`;
+        } else {
+          targetPath = `${targetPath} (${count})`;
+        }
       } else {
-        targetPath = `${targetPath} (${count})`;
+        pathCountMap.set(targetPath, 0);
       }
+
+      zip.file(targetPath, blob);
+    }
+
+    // Generate ZIP filename
+    const rootFolders = new Set<string>();
+    for (const item of imageItems) {
+      if (item.folderPath) {
+        const root = item.folderPath.split('/')[0];
+        if (root) rootFolders.add(root);
+      }
+    }
+
+    let zipFilename: string;
+    if (rootFolders.size === 1) {
+      const singleRoot = Array.from(rootFolders)[0];
+      zipFilename = `${singleRoot}-bg-removed.zip`;
     } else {
-      pathCountMap.set(targetPath, 0);
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      zipFilename = `bg-removed-${y}-${m}-${d}.zip`;
     }
 
-    zip.file(targetPath, blob);
-  }
-
-  // Generate ZIP filename
-  const rootFolders = new Set<string>();
-  for (const item of imageItems) {
-    if (item.folderPath) {
-      const root = item.folderPath.split('/')[0];
-      if (root) rootFolders.add(root);
-    }
-  }
-
-  let zipFilename: string;
-  if (rootFolders.size === 1) {
-    const singleRoot = Array.from(rootFolders)[0];
-    zipFilename = `${singleRoot}-bg-removed.zip`;
-  } else {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    zipFilename = `bg-removed-${y}-${m}-${d}.zip`;
-  }
-
-  const zipBlob = await zip.generateAsync(
-    {
-      type: 'blob',
-      compression: 'DEFLATE',
-      compressionOptions: { level: 6 },
-    },
-    (metadata) => {
-      if (onZipProgress) {
-        onZipProgress(Math.round(metadata.percent));
+    const zipBlob = await zip.generateAsync(
+      {
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 },
+      },
+      (metadata) => {
+        if (onZipProgress) {
+          onZipProgress(Math.round(metadata.percent));
+        }
       }
-    }
-  );
+    );
 
-  saveAs(zipBlob, zipFilename);
+    saveAs(zipBlob, zipFilename);
+
+    return {
+      success: true,
+      filename: zipFilename,
+      totalItems: results.size,
+    };
+  }
 
   return {
     success: true,
-    filename: zipFilename,
+    filename: '',
     totalItems: results.size,
   };
 }
+
+export const batchRemoveBg = batchRemoveBgAndZip;
+

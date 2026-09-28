@@ -152,29 +152,29 @@ export const StatsBar: React.FC<StatsBarProps> = ({
             </button>
           )}
 
-          {isCompleted && (
+          {(hasCompressedItems || isCompleted) && (
             <button
               id="download-zip-btn"
               type="button"
               disabled={anyBusy}
               onClick={onDownloadZip}
-              className="px-6 py-3 rounded-xl bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-900 dark:text-white font-bold text-xs sm:text-sm border border-slate-300 dark:border-white/10 transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-40 disabled:pointer-events-none"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-600/20 hover:shadow-emerald-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
             >
               {isZipping ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
                   <span>Packaging ({zipProgress}%)...</span>
                 </>
               ) : (
                 <>
-                  <Download className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <Download className="w-4 h-4 text-white" />
                   <span>Download ZIP</span>
                 </>
               )}
             </button>
           )}
 
-          {/* Remove BG & ZIP Button */}
+          {/* Remove BG Button */}
           {onRemoveBgAndZip && (
             <button
               id="remove-bg-btn"
@@ -191,7 +191,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
               ) : (
                 <>
                   <Eraser className="w-4 h-4" />
-                  <span>Remove BG & ZIP</span>
+                  <span>Remove BG</span>
                 </>
               )}
             </button>
@@ -218,12 +218,12 @@ export const StatsBar: React.FC<StatsBarProps> = ({
             ) : isCompleted ? (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Re-Compress & Export ZIP</span>
+                <span>Re-Compress All</span>
               </>
             ) : (
               <>
-                <Download className="w-4 h-4" />
-                <span>GENERATE ZIP ARCHIVE</span>
+                <Sparkles className="w-4 h-4" />
+                <span>COMPRESS ALL</span>
               </>
             )}
           </button>

@@ -19,8 +19,453 @@
     background-color: var(--bg-main);
     color: var(--text-main);
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
+}
+
+/* ==========================================================================
+   THEME COLOR PRESETS ENGINE (data-theme)
+   ========================================================================== */
+
+/* 1. CYBERPUNK 2077 */
+html[data-theme="cyberpunk"] {
+  --bg-main: #08090d;
+  --text-main: #ecfeff;
+  --border-main: rgba(0, 240, 255, 0.25);
+  font-family: 'Orbitron', 'Plus Jakarta Sans', sans-serif;
+}
+html[data-theme="cyberpunk"] body {
+  background-color: #08090d;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.12), transparent 45%),
+    linear-gradient(rgba(0, 240, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.04) 1px, transparent 1px);
+  background-size: 100% 100%, 32px 32px, 32px 32px;
+}
+html[data-theme="cyberpunk"] header,
+html[data-theme="cyberpunk"] aside,
+html[data-theme="cyberpunk"] .bg-white\/95,
+html[data-theme="cyberpunk"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="cyberpunk"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="cyberpunk"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #0c0e14 !important;
+  border-color: rgba(0, 240, 255, 0.28) !important;
+}
+html[data-theme="cyberpunk"] .bg-blue-600 {
+  background-color: #00f0ff !important;
+  color: #050608 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.45) !important;
+}
+html[data-theme="cyberpunk"] .bg-blue-600:hover {
+  background-color: #fcee0a !important;
+  color: #000000 !important;
+  box-shadow: 0 0 25px rgba(252, 238, 10, 0.6) !important;
+}
+html[data-theme="cyberpunk"] .text-blue-600,
+html[data-theme="cyberpunk"] .text-blue-500,
+html[data-theme="cyberpunk"] .dark\:text-blue-400 {
+  color: #00f0ff !important;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+}
+
+/* 2. NEON SYNTHWAVE / RETROWAVE */
+html[data-theme="neon-synthwave"] {
+  --bg-main: #0b021a;
+  --text-main: #fdf4ff;
+  --border-main: rgba(255, 42, 133, 0.3);
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+html[data-theme="neon-synthwave"] body {
+  background-color: #0b021a;
+  background-image: 
+    radial-gradient(circle at 50% -10%, rgba(255, 42, 133, 0.25), transparent 50%),
+    radial-gradient(circle at 80% 30%, rgba(0, 255, 240, 0.15), transparent 45%),
+    linear-gradient(rgba(255, 42, 133, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 240, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+}
+html[data-theme="neon-synthwave"] header,
+html[data-theme="neon-synthwave"] aside,
+html[data-theme="neon-synthwave"] .bg-white\/95,
+html[data-theme="neon-synthwave"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="neon-synthwave"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="neon-synthwave"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #120529 !important;
+  border-color: rgba(255, 42, 133, 0.35) !important;
+}
+html[data-theme="neon-synthwave"] .bg-blue-600 {
+  background: linear-gradient(135deg, #ff2a85 0%, #7928ca 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 20px rgba(255, 42, 133, 0.5) !important;
+}
+html[data-theme="neon-synthwave"] .bg-blue-600:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 28px rgba(0, 255, 240, 0.6) !important;
+}
+html[data-theme="neon-synthwave"] .text-blue-600,
+html[data-theme="neon-synthwave"] .text-blue-500,
+html[data-theme="neon-synthwave"] .dark\:text-blue-400 {
+  color: #ff2a85 !important;
+  text-shadow: 0 0 10px rgba(255, 42, 133, 0.6);
+}
+
+/* 3. HACKER MATRIX TERMINAL */
+html[data-theme="hacker-matrix"] {
+  --bg-main: #020904;
+  --text-main: #4ade80;
+  --border-main: rgba(0, 255, 102, 0.28);
+  font-family: 'Fira Code', 'JetBrains Mono', monospace !important;
+}
+html[data-theme="hacker-matrix"] body {
+  background-color: #020904;
+  background-image: 
+    radial-gradient(circle at 50% 10%, rgba(0, 255, 102, 0.08), transparent 60%),
+    linear-gradient(rgba(0, 255, 102, 0.03) 50%, rgba(0, 0, 0, 0.35) 50%);
+  background-size: 100% 100%, 100% 4px;
+}
+html[data-theme="hacker-matrix"] header,
+html[data-theme="hacker-matrix"] aside,
+html[data-theme="hacker-matrix"] .bg-white\/95,
+html[data-theme="hacker-matrix"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="hacker-matrix"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="hacker-matrix"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #041207 !important;
+  border-color: rgba(0, 255, 102, 0.35) !important;
+}
+html[data-theme="hacker-matrix"] .bg-blue-600 {
+  background-color: #00ff66 !important;
+  color: #020904 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 16px rgba(0, 255, 102, 0.45) !important;
+}
+html[data-theme="hacker-matrix"] .bg-blue-600:hover {
+  background-color: #22c55e !important;
+  box-shadow: 0 0 24px rgba(0, 255, 102, 0.7) !important;
+}
+html[data-theme="hacker-matrix"] .text-blue-600,
+html[data-theme="hacker-matrix"] .text-blue-500,
+html[data-theme="hacker-matrix"] .dark\:text-blue-400 {
+  color: #00ff66 !important;
+  text-shadow: 0 0 8px rgba(0, 255, 102, 0.5);
+}
+
+/* 4. GAMER MECHA HUD */
+html[data-theme="gamer-mecha"] {
+  --bg-main: #090b10;
+  --text-main: #f1f5f9;
+  --border-main: rgba(239, 68, 68, 0.3);
+  font-family: 'Orbitron', 'Plus Jakarta Sans', sans-serif;
+}
+html[data-theme="gamer-mecha"] body {
+  background-color: #090b10;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(239, 68, 68, 0.14), transparent 50%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.015) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.015) 25%, transparent 25%);
+  background-size: 100% 100%, 8px 8px, 8px 8px;
+}
+html[data-theme="gamer-mecha"] header,
+html[data-theme="gamer-mecha"] aside,
+html[data-theme="gamer-mecha"] .bg-white\/95,
+html[data-theme="gamer-mecha"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="gamer-mecha"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="gamer-mecha"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #10141e !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+html[data-theme="gamer-mecha"] .bg-blue-600 {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.5) !important;
+}
+html[data-theme="gamer-mecha"] .bg-blue-600:hover {
+  background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%) !important;
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.6) !important;
+}
+html[data-theme="gamer-mecha"] .text-blue-600,
+html[data-theme="gamer-mecha"] .text-blue-500,
+html[data-theme="gamer-mecha"] .dark\:text-blue-400 {
+  color: #ef4444 !important;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
+}
+
+/* 5. MATERIAL EXPRESSIVE (M3) */
+html[data-theme="material-you"] {
+  --bg-main: #101124;
+  --text-main: #e0e7ff;
+  --border-main: rgba(99, 102, 241, 0.25);
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+html[data-theme="material-you"] body {
+  background-color: #101124;
+  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15), transparent 60%);
+}
+html[data-theme="material-you"] header,
+html[data-theme="material-you"] aside,
+html[data-theme="material-you"] .bg-white\/95,
+html[data-theme="material-you"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="material-you"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="material-you"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #181938 !important;
+  border-color: rgba(99, 102, 241, 0.28) !important;
+}
+html[data-theme="material-you"] .bg-blue-600 {
+  background-color: #6366f1 !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 20px -4px rgba(99, 102, 241, 0.5) !important;
+}
+html[data-theme="material-you"] .bg-blue-600:hover {
+  background-color: #4f46e5 !important;
+}
+html[data-theme="material-you"] .text-blue-600,
+html[data-theme="material-you"] .text-blue-500,
+html[data-theme="material-you"] .dark\:text-blue-400 {
+  color: #818cf8 !important;
+}
+
+/* 6. MATERIAL EMERALD */
+html[data-theme="material-emerald"] {
+  --bg-main: #061a13;
+  --text-main: #ecfdf5;
+  --border-main: rgba(16, 185, 129, 0.25);
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+html[data-theme="material-emerald"] body {
+  background-color: #061a13;
+  background-image: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.16), transparent 55%);
+}
+html[data-theme="material-emerald"] header,
+html[data-theme="material-emerald"] aside,
+html[data-theme="material-emerald"] .bg-white\/95,
+html[data-theme="material-emerald"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="material-emerald"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="material-emerald"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #0a271d !important;
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+html[data-theme="material-emerald"] .bg-blue-600 {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 20px -4px rgba(16, 185, 129, 0.5) !important;
+}
+html[data-theme="material-emerald"] .text-blue-600,
+html[data-theme="material-emerald"] .text-blue-500,
+html[data-theme="material-emerald"] .dark\:text-blue-400 {
+  color: #34d399 !important;
+}
+
+/* 7. MATERIAL SUNSET */
+html[data-theme="material-sunset"] {
+  --bg-main: #190e15;
+  --text-main: #fff1f2;
+  --border-main: rgba(249, 115, 22, 0.25);
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+html[data-theme="material-sunset"] body {
+  background-color: #190e15;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(249, 115, 22, 0.15), transparent 50%),
+    radial-gradient(circle at 80% 30%, rgba(251, 113, 133, 0.12), transparent 45%);
+}
+html[data-theme="material-sunset"] header,
+html[data-theme="material-sunset"] aside,
+html[data-theme="material-sunset"] .bg-white\/95,
+html[data-theme="material-sunset"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="material-sunset"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="material-sunset"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #271420 !important;
+  border-color: rgba(249, 115, 22, 0.25) !important;
+}
+html[data-theme="material-sunset"] .bg-blue-600 {
+  background: linear-gradient(135deg, #f97316 0%, #e11d48 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 20px -4px rgba(249, 115, 22, 0.5) !important;
+}
+html[data-theme="material-sunset"] .text-blue-600,
+html[data-theme="material-sunset"] .text-blue-500,
+html[data-theme="material-sunset"] .dark\:text-blue-400 {
+  color: #fb923c !important;
+}
+
+/* 8. LUXURY OBSIDIAN GOLD */
+html[data-theme="luxury-gold"] {
+  --bg-main: #070709;
+  --text-main: #fefce8;
+  --border-main: rgba(234, 179, 8, 0.25);
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+html[data-theme="luxury-gold"] body {
+  background-color: #070709;
+  background-image: 
+    radial-gradient(circle at 50% -10%, rgba(234, 179, 8, 0.14), transparent 50%),
+    radial-gradient(circle at 20% 40%, rgba(202, 138, 4, 0.08), transparent 40%);
+}
+html[data-theme="luxury-gold"] header,
+html[data-theme="luxury-gold"] aside,
+html[data-theme="luxury-gold"] .bg-white\/95,
+html[data-theme="luxury-gold"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-theme="luxury-gold"] .dark\:bg-\[\#0a0a0a\],
+html[data-theme="luxury-gold"] .dark\:bg-\[\#0f0f0f\] {
+  background-color: #0e0e12 !important;
+  border-color: rgba(234, 179, 8, 0.28) !important;
+}
+html[data-theme="luxury-gold"] .bg-blue-600 {
+  background: linear-gradient(135deg, #fef08a 0%, #eab308 40%, #ca8a04 100%) !important;
+  color: #181201 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.45) !important;
+}
+html[data-theme="luxury-gold"] .bg-blue-600:hover {
+  background: linear-gradient(135deg, #ffffff 0%, #fef08a 40%, #eab308 100%) !important;
+  box-shadow: 0 0 26px rgba(234, 179, 8, 0.65) !important;
+}
+html[data-theme="luxury-gold"] .text-blue-600,
+html[data-theme="luxury-gold"] .text-blue-500,
+html[data-theme="luxury-gold"] .dark\:text-blue-400 {
+  color: #facc15 !important;
+  text-shadow: 0 0 10px rgba(234, 179, 8, 0.4);
+}
+
+/* ==========================================================================
+   UI LOOK & MORPHISM STYLES (data-style)
+   ========================================================================== */
+
+/* 1. GLASSMORPHISM (Frosted Glass) */
+html[data-style="glassmorphism"] header,
+html[data-style="glassmorphism"] aside,
+html[data-style="glassmorphism"] .bg-white\/95,
+html[data-style="glassmorphism"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-style="glassmorphism"] .dark\:bg-\[\#0a0a0a\],
+html[data-style="glassmorphism"] .dark\:bg-\[\#0f0f0f\],
+html[data-style="glassmorphism"] .bg-white,
+html[data-style="glassmorphism"] .bg-slate-50,
+html[data-style="glassmorphism"] .dark\:bg-\[\#121212\] {
+  backdrop-filter: blur(24px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(170%) !important;
+  background-color: rgba(18, 20, 32, 0.55) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.4) !important;
+}
+html[data-style="glassmorphism"]:not(.dark) header,
+html[data-style="glassmorphism"]:not(.dark) aside,
+html[data-style="glassmorphism"]:not(.dark) .bg-white\/95,
+html[data-style="glassmorphism"]:not(.dark) .bg-white {
+  background-color: rgba(255, 255, 255, 0.72) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 2. LIQUID GLASS (Water Refraction & Droplet Curves) */
+html[data-style="liquid-glass"] header,
+html[data-style="liquid-glass"] aside,
+html[data-style="liquid-glass"] .bg-white\/95,
+html[data-style="liquid-glass"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-style="liquid-glass"] .dark\:bg-\[\#0a0a0a\],
+html[data-style="liquid-glass"] .dark\:bg-\[\#0f0f0f\],
+html[data-style="liquid-glass"] .bg-white,
+html[data-style="liquid-glass"] .dark\:bg-\[\#121212\] {
+  border-radius: 24px !important;
+  backdrop-filter: blur(28px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 60%, rgba(0, 0, 0, 0.25) 100%) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.24) !important;
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.4) !important;
+}
+html[data-style="liquid-glass"] button {
+  border-radius: 9999px !important;
+}
+
+/* 3. SKEUOMORPHISM / NEUMORPHISM (Tactile Depth) */
+html[data-style="skeuomorphism"] header,
+html[data-style="skeuomorphism"] aside,
+html[data-style="skeuomorphism"] .bg-white\/95,
+html[data-style="skeuomorphism"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-style="skeuomorphism"] .dark\:bg-\[\#0a0a0a\],
+html[data-style="skeuomorphism"] .dark\:bg-\[\#0f0f0f\],
+html[data-style="skeuomorphism"] .bg-white,
+html[data-style="skeuomorphism"] .dark\:bg-\[\#121212\] {
+  box-shadow: 8px 8px 20px rgba(0, 0, 0, 0.5), -5px -5px 14px rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+html[data-style="skeuomorphism"]:not(.dark) header,
+html[data-style="skeuomorphism"]:not(.dark) aside,
+html[data-style="skeuomorphism"]:not(.dark) .bg-white {
+  box-shadow: 7px 7px 18px #d1d5db, -7px -7px 18px #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+}
+html[data-style="skeuomorphism"] button:active {
+  box-shadow: inset 4px 4px 8px rgba(0, 0, 0, 0.6), inset -2px -2px 6px rgba(255, 255, 255, 0.06) !important;
+  transform: translateY(1px);
+}
+
+/* 4. CLAYMORPHISM (3D Puffy Clay Toy) */
+html[data-style="claymorphism"] header,
+html[data-style="claymorphism"] aside,
+html[data-style="claymorphism"] .bg-white\/95,
+html[data-style="claymorphism"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-style="claymorphism"] .dark\:bg-\[\#0a0a0a\],
+html[data-style="claymorphism"] .dark\:bg-\[\#0f0f0f\],
+html[data-style="claymorphism"] .bg-white,
+html[data-style="claymorphism"] .dark\:bg-\[\#121212\] {
+  border-radius: 26px !important;
+  box-shadow: 
+    9px 12px 24px rgba(0, 0, 0, 0.4),
+    inset -4px -4px 10px rgba(0, 0, 0, 0.3),
+    inset 4px 4px 10px rgba(255, 255, 255, 0.22) !important;
+  border: 2px solid rgba(255, 255, 255, 0.16) !important;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+html[data-style="claymorphism"] button {
+  border-radius: 20px !important;
+  box-shadow: 
+    4px 6px 14px rgba(0, 0, 0, 0.35),
+    inset -2px -2px 6px rgba(0, 0, 0, 0.25),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.3) !important;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+html[data-style="claymorphism"] button:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+html[data-style="claymorphism"] button:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* 5. CYBER HUD & ARMOR (Chamfered Cuts) */
+html[data-style="cyber-hud"] header,
+html[data-style="cyber-hud"] aside,
+html[data-style="cyber-hud"] .bg-white\/95,
+html[data-style="cyber-hud"] .dark\:bg-\[\#0a0a0a\]\/95,
+html[data-style="cyber-hud"] .dark\:bg-\[\#0a0a0a\],
+html[data-style="cyber-hud"] .dark\:bg-\[\#0f0f0f\],
+html[data-style="cyber-hud"] .bg-white,
+html[data-style="cyber-hud"] .dark\:bg-\[\#121212\] {
+  clip-path: polygon(
+    0 12px, 
+    12px 0, 
+    calc(100% - 12px) 0, 
+    100% 12px, 
+    100% calc(100% - 12px), 
+    calc(100% - 12px) 100%, 
+    12px 100%, 
+    0 calc(100% - 12px)
+  ) !important;
+  border-radius: 0 !important;
+  border-width: 1.5px !important;
+}
+html[data-style="cyber-hud"] button {
+  clip-path: polygon(
+    0 8px, 
+    8px 0, 
+    calc(100% - 8px) 0, 
+    100% 8px, 
+    100% calc(100% - 8px), 
+    calc(100% - 8px) 100%, 
+    8px 100%, 
+    0 calc(100% - 8px)
+  ) !important;
+  border-radius: 0 !important;
 }
 
 /* Sleek adaptive scrollbars */
@@ -73,4 +518,3 @@
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
 }
-

@@ -18,6 +18,14 @@ import { createAndDownloadZip, downloadSingleFile } from './utils/zipPackager';
 import { generateSampleImages } from './utils/sampleGenerator';
 import { ScannedFileItem, extractFolderPath, getFolderHierarchySummary, isValidMediaFile } from './utils/fileScanner';
 import { batchRemoveBgAndZip } from './utils/bgRemover';
+import { ThemeModal } from './components/ThemeModal';
+import {
+  AppTheme,
+  UiLookStyle,
+  THEME_STORAGE_PRESET_KEY,
+  THEME_STORAGE_STYLE_KEY,
+  getThemeConfig,
+} from './utils/themePresets';
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   quality: 80,
@@ -51,6 +59,28 @@ export default function App() {
       return DEFAULT_SETTINGS;
     }
   });
+
+  const [appTheme, setAppTheme] = useState<AppTheme>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_PRESET_KEY);
+      if (saved) return saved as AppTheme;
+      return 'midnight-pro';
+    } catch {
+      return 'midnight-pro';
+    }
+  });
+
+  const [uiStyle, setUiStyle] = useState<UiLookStyle>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_STYLE_KEY);
+      if (saved) return saved as UiLookStyle;
+      return 'default';
+    } catch {
+      return 'default';
+    }
+  });
+
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
@@ -87,16 +117,41 @@ export default function App() {
 
   const isCancelledRef = useRef(false);
 
-  // Theme sync
+  // Theme preset sync
   useEffect(() => {
-    if (darkMode) {
+    document.documentElement.setAttribute('data-theme', appTheme);
+    localStorage.setItem(THEME_STORAGE_PRESET_KEY, appTheme);
+
+    const config = getThemeConfig(appTheme);
+    if (config.isDark) {
       document.documentElement.classList.add('dark');
+      setDarkMode(true);
       localStorage.setItem(THEME_STORAGE_KEY, 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      setDarkMode(false);
       localStorage.setItem(THEME_STORAGE_KEY, 'light');
     }
-  }, [darkMode]);
+  }, [appTheme]);
+
+  // UI Look Style sync
+  useEffect(() => {
+    document.documentElement.setAttribute('data-style', uiStyle);
+    localStorage.setItem(THEME_STORAGE_STYLE_KEY, uiStyle);
+  }, [uiStyle]);
+
+  // Dark/Light toggle handler
+  const handleToggleTheme = useCallback(() => {
+    setDarkMode((prev) => {
+      const next = !prev;
+      if (next) {
+        setAppTheme('midnight-pro');
+      } else {
+        setAppTheme('clean-light');
+      }
+      return next;
+    });
+  }, []);
 
   // Settings sync
   useEffect(() => {
@@ -461,6 +516,24 @@ export default function App() {
             }
             return latestImages;
           });
+        } else if (!isCancelledRef.current) {
+          // Confetti celebration
+          try {
+            confetti({
+              particleCount: 80,
+              spread: 75,
+              origin: { y: 0.7 },
+            });
+          } catch {
+            // ignore
+          }
+
+          addToast({
+            type: 'success',
+            title: 'Batch Compression Complete',
+            message: `Processed ${itemsToProcess.length} item(s). You can review, touch up images, or click "Download ZIP" when ready.`,
+            duration: 6000,
+          });
         }
       } catch (error: any) {
         console.error('Batch compression failed:', error);
@@ -595,7 +668,9 @@ export default function App() {
           setBgRemovalProgress(percent);
         },
         // isCancelled
-        () => isCancelledRef.current
+        () => isCancelledRef.current,
+        // autoDownloadZip
+        false
       );
 
       setIsRemovingBg(false);
@@ -614,8 +689,8 @@ export default function App() {
 
       addToast({
         type: 'success',
-        title: 'Background Removed & ZIP Downloaded',
-        message: `${result.totalItems} transparent PNG(s) packaged into ${result.filename}`,
+        title: 'Background Removal Completed',
+        message: `${result.totalItems} transparent PNG(s) ready. You can review/touch up images and download the ZIP when ready.`,
         duration: 7000,
       });
     } catch (err: any) {
@@ -706,12 +781,15 @@ export default function App() {
       {/* Top Header */}
       <Header
         darkMode={darkMode}
-        onToggleTheme={() => setDarkMode(!darkMode)}
+        onToggleTheme={handleToggleTheme}
         viewMode={viewMode}
         onToggleViewMode={setViewMode}
         totalImages={images.length}
         onClearAll={handleClearAll}
         isProcessing={isProcessing}
+        currentTheme={appTheme}
+        currentStyle={uiStyle}
+        onOpenThemeModal={() => setIsThemeModalOpen(true)}
       />
 
       {/* Main App Layout: Sidebar + Canvas Workspace */}
@@ -722,13 +800,18 @@ export default function App() {
           onChangeSettings={setSettings}
           onResetSettings={handleResetSettings}
           disabled={isProcessing || isZipping}
+          currentTheme={appTheme}
+          currentStyle={uiStyle}
+          onSelectTheme={setAppTheme}
+          onSelectStyle={setUiStyle}
+          onOpenThemeModal={() => setIsThemeModalOpen(true)}
           className="w-full lg:w-76 shrink-0"
         />
 
         {/* Center Workspace */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 flex flex-col gap-6 overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-6 flex flex-col gap-5 overflow-y-auto">
           {images.length === 0 ? (
-            <div className="flex-1 flex flex-col justify-center">
+            <div className="w-full max-w-5xl mx-auto flex flex-col gap-5">
               <DropZone
                 onFilesSelected={handleFilesSelected}
                 disabled={isProcessing}
@@ -740,7 +823,7 @@ export default function App() {
               />
             </div>
           ) : (
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5 max-w-7xl mx-auto w-full">
               {/* Compact Drop Zone Banner */}
               <DropZone
                 onFilesSelected={handleFilesSelected}
@@ -819,7 +902,7 @@ export default function App() {
         <StatsBar
           stats={batchStats}
           folderCount={getFolderHierarchySummary(images).distinctFoldersCount}
-          onCompressAndDownload={() => handleCompressAll(true)}
+          onCompressAndDownload={() => handleCompressAll(false)}
           onCompressAll={() => handleCompressAll(false)}
           onDownloadZip={() => triggerZipDownload()}
           onCancelProcessing={handleCancelProcessing}
@@ -853,6 +936,16 @@ export default function App() {
           settings={settings}
         />
       )}
+
+      {/* Theme & Visual Aesthetics Studio Modal */}
+      <ThemeModal
+        isOpen={isThemeModalOpen}
+        onClose={() => setIsThemeModalOpen(false)}
+        currentTheme={appTheme}
+        currentStyle={uiStyle}
+        onSelectTheme={setAppTheme}
+        onSelectStyle={setUiStyle}
+      />
 
       {/* Toasts */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

@@ -188,7 +188,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative w-full rounded-2xl border-2 border-dashed transition-all p-8 sm:p-12 text-center flex flex-col items-center justify-center cursor-pointer select-none group ${
+      className={`relative w-full rounded-2xl border-2 border-dashed transition-all p-6 sm:p-10 text-center flex flex-col items-center justify-center cursor-pointer select-none group ${
         isDragOver
           ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20 ring-4 ring-blue-500/20 scale-[1.005]'
           : 'border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.02] hover:bg-slate-100/70 dark:hover:bg-white/[0.03] hover:border-slate-400 dark:hover:border-white/20 shadow-xs'
@@ -216,7 +216,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
 
       {/* Hero Drop Icon */}
       <div
-        className={`w-20 h-20 rounded-full border flex items-center justify-center mb-5 transition-all duration-300 group-hover:scale-105 ${
+        className={`w-16 h-16 rounded-2xl border flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-105 ${
           isDragOver
             ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/30 border-blue-500'
             : isScanning
@@ -225,9 +225,9 @@ export const DropZone: React.FC<DropZoneProps> = ({
         }`}
       >
         {isScanning ? (
-          <Loader2 className="w-10 h-10 animate-spin text-amber-500 dark:text-amber-400" />
+          <Loader2 className="w-8 h-8 animate-spin text-amber-500 dark:text-amber-400" />
         ) : (
-          <UploadCloud className="w-10 h-10" />
+          <UploadCloud className="w-8 h-8" />
         )}
       </div>
 
@@ -239,12 +239,12 @@ export const DropZone: React.FC<DropZoneProps> = ({
           ? 'Drop Images, Videos or Folders to Load Instantly'
           : 'Drag & Drop Images, Videos or Complete Folders'}
       </h2>
-      <p className="text-xs sm:text-sm text-slate-500 dark:text-white/40 max-w-md mb-6 leading-relaxed">
+      <p className="text-xs sm:text-sm text-slate-500 dark:text-white/40 max-w-md mb-5 leading-relaxed">
         Select single photos, video clips, or entire folder structures with subfolders. All nested directory trees are preserved identically in your exported ZIP archive.
       </p>
 
       {/* Action Buttons */}
-      <div className="flex flex-wrap items-center justify-center gap-3.5 mb-7" onClick={(e) => e.stopPropagation()}>
+      <div className="flex flex-wrap items-center justify-center gap-3 mb-6" onClick={(e) => e.stopPropagation()}>
         <button
           id="select-images-primary-btn"
           type="button"

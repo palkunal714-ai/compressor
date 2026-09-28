@@ -34,7 +34,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   ];
 
   return (
-    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/5 transition-colors">
+    <div className="mt-3 pt-4 border-t border-slate-200 dark:border-white/5 transition-colors">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
         {highlights.map((h, i) => {
           const Icon = h.icon;

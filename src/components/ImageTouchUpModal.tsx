@@ -32,9 +32,28 @@ interface ImageTouchUpModalProps {
   settings?: CompressionSettings;
 }
 
-type ToolMode = 'restore' | 'erase' | 'smart' | 'pan';
+type ToolMode = 'restore' | 'erase' | 'pan';
 type BackdropMode = 'checker-dark' | 'checker-light' | 'black' | 'white' | 'green';
 type SmartSensitivity = 'soft' | 'balanced' | 'sharp';
+
+// High-accuracy perceptual Redmean color distance (0 = identical, 765 = maximum contrast)
+const getPerceptualColorDist = (
+  r1: number,
+  g1: number,
+  b1: number,
+  r2: number,
+  g2: number,
+  b2: number
+): number => {
+  const dr = r1 - r2;
+  const dg = g1 - g2;
+  const db = b1 - b2;
+  const rMean = (r1 + r2) * 0.5;
+  const wR = 2 + rMean / 256;
+  const wG = 4.0;
+  const wB = 2 + (255 - rMean) / 256;
+  return Math.sqrt(wR * dr * dr + wG * dg * dg + wB * db * db);
+};
 
 export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
   item,
@@ -54,13 +73,15 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
   // Direct typed-array pixel memory for instant 60fps color analysis
   const origPixelsRef = useRef<Uint8ClampedArray | null>(null);
   const globalBgSamplesRef = useRef<[number, number, number][]>([]);
-  const globalFgSamplesRef = useRef<[number, number, number][]>([]);
-  const localBgSamplesRef = useRef<[number, number, number][]>([]);
-  const localFgSamplesRef = useRef<[number, number, number][]>([]);
+  const strokeSeedColorRef = useRef<[number, number, number] | null>(null);
+  const recentEraseColorsRef = useRef<[number, number, number][]>([]);
+  const recentRestoreColorsRef = useRef<[number, number, number][]>([]);
 
   // --- States ---
   const [isReady, setIsReady] = useState(false);
-  const [tool, setTool] = useState<ToolMode>('smart');
+  const [tool, setTool] = useState<ToolMode>('restore');
+  const [isSmartAi, setIsSmartAi] = useState<boolean>(true);
+  const [isMagicWand, setIsMagicWand] = useState<boolean>(false);
   const [brushSize, setBrushSize] = useState<number>(36);
   const [brushHardness, setBrushHardness] = useState<number>(0.85); // 0 = soft gradient, 1 = hard edge
   const [brushOpacity, setBrushOpacity] = useState<number>(1);
@@ -89,7 +110,37 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isSpacePressedRef = useRef(false);
 
-  // Sample global background & foreground palettes for the Smart Brush
+  // Sample smoothed 3x3 RGB color from original photo at canvas coordinates
+  const sampleColorAt = useCallback((canvasX: number, canvasY: number): [number, number, number] | null => {
+    const origData = origPixelsRef.current;
+    const origCanvas = origCanvasRef.current;
+    if (!origData || !origCanvas) return null;
+    const w = origCanvas.width;
+    const h = origCanvas.height;
+    const px = Math.min(w - 1, Math.max(0, Math.round(canvasX)));
+    const py = Math.min(h - 1, Math.max(0, Math.round(canvasY)));
+
+    let rSum = 0;
+    let gSum = 0;
+    let bSum = 0;
+    let count = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      const ny = py + dy;
+      if (ny < 0 || ny >= h) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = px + dx;
+        if (nx < 0 || nx >= w) continue;
+        const idx = (ny * w + nx) * 4;
+        rSum += origData[idx];
+        gSum += origData[idx + 1];
+        bSum += origData[idx + 2];
+        count++;
+      }
+    }
+    return count > 0 ? [Math.round(rSum / count), Math.round(gSum / count), Math.round(bSum / count)] : null;
+  }, []);
+
+  // Sample global background palettes from verified transparent pixels and corners
   const refreshColorSamples = useCallback(() => {
     const mask = maskCanvasRef.current;
     const orig = origCanvasRef.current;
@@ -103,30 +154,10 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
     if (!origData) return;
 
     const maskData = maskCtx.getImageData(0, 0, width, height).data;
-
     const bgSamples: [number, number, number][] = [];
-    const fgSamples: [number, number, number][] = [];
 
-    // 1. Sample 16 perimeter points along the outer borders
-    // Perimeter points are background in practically all product & portrait photos
-    const perimeterPoints: [number, number][] = [
-      [0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1],
-      [Math.floor(width / 2), 0], [Math.floor(width / 2), height - 1],
-      [0, Math.floor(height / 2)], [width - 1, Math.floor(height / 2)],
-      [Math.floor(width / 4), 0], [Math.floor((3 * width) / 4), 0],
-      [Math.floor(width / 4), height - 1], [Math.floor((3 * width) / 4), height - 1],
-      [0, Math.floor(height / 4)], [0, Math.floor((3 * height) / 4)],
-      [width - 1, Math.floor(height / 4)], [width - 1, Math.floor((3 * height) / 4)],
-    ];
-
-    for (const [px, py] of perimeterPoints) {
-      if (px >= 0 && px < width && py >= 0 && py < height) {
-        const idx = (py * width + px) * 4;
-        bgSamples.push([origData[idx], origData[idx + 1], origData[idx + 2]]);
-      }
-    }
-
-    // 2. Subsample on a 32x32 grid (sub-millisecond scan)
+    // 1. Subsample any pixels that have ALREADY been erased to transparent (alpha < 35)
+    // These are 100% verified background colors chosen by AI or user erasure
     const stepX = Math.max(1, Math.floor(width / 32));
     const stepY = Math.max(1, Math.floor(height / 32));
 
@@ -134,77 +165,27 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
       for (let x = 0; x < width; x += stepX) {
         const idx = (y * width + x) * 4;
         const alpha = maskData[idx + 3];
-        const r = origData[idx];
-        const g = origData[idx + 1];
-        const b = origData[idx + 2];
-
-        if (alpha < 30) {
-          if (bgSamples.length < 48) {
-            bgSamples.push([r, g, b]);
-          }
-        } else if (alpha > 220) {
-          if (fgSamples.length < 48) {
-            fgSamples.push([r, g, b]);
-          }
+        if (alpha < 35 && bgSamples.length < 64) {
+          bgSamples.push([origData[idx], origData[idx + 1], origData[idx + 2]]);
         }
       }
     }
 
-    // Fallback if foreground was not yet isolated: sample center region
-    if (fgSamples.length === 0) {
-      const cx = Math.floor(width / 2);
-      const cy = Math.floor(height / 2);
-      const idx = (cy * width + cx) * 4;
-      fgSamples.push([origData[idx], origData[idx + 1], origData[idx + 2]]);
+    // 2. Only if the image has verified transparent background, we can safely sample transparent perimeter pixels
+    // If the image is 100% opaque (not done by AI yet), we do NOT guess perimeter points because they can hit shoes, hair, hands
+    if (bgSamples.length > 0) {
+      const cornerPoints: [number, number][] = [
+        [0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]
+      ];
+      for (const [px, py] of cornerPoints) {
+        const idx = (py * width + px) * 4;
+        if (maskData[idx + 3] < 35) {
+          bgSamples.push([origData[idx], origData[idx + 1], origData[idx + 2]]);
+        }
+      }
     }
 
     globalBgSamplesRef.current = bgSamples;
-    globalFgSamplesRef.current = fgSamples;
-  }, []);
-
-  // Sample local neighborhood around the cursor for ultra-high local edge discrimination
-  const sampleLocalNeighborhood = useCallback((cx: number, cy: number, radius: number) => {
-    const mask = maskCanvasRef.current;
-    if (!mask) return;
-    const maskCtx = mask.getContext('2d', { willReadFrequently: true });
-    if (!maskCtx) return;
-
-    const width = mask.width;
-    const height = mask.height;
-    const origData = origPixelsRef.current;
-    if (!origData) return;
-
-    const minX = Math.max(0, Math.floor(cx - radius));
-    const maxX = Math.min(width - 1, Math.ceil(cx + radius));
-    const minY = Math.max(0, Math.floor(cy - radius));
-    const maxY = Math.min(height - 1, Math.ceil(cy + radius));
-    const regionW = maxX - minX + 1;
-    const regionH = maxY - minY + 1;
-    if (regionW <= 0 || regionH <= 0) return;
-
-    const maskData = maskCtx.getImageData(minX, minY, regionW, regionH).data;
-
-    const localBg: [number, number, number][] = [];
-    const localFg: [number, number, number][] = [];
-
-    const step = Math.max(1, Math.floor(radius / 8));
-    for (let y = minY; y <= maxY; y += step) {
-      const rowOffset = (y - minY) * regionW;
-      for (let x = minX; x <= maxX; x += step) {
-        const maskIdx = (rowOffset + (x - minX)) * 4;
-        const origIdx = (y * width + x) * 4;
-        const alpha = maskData[maskIdx + 3];
-
-        if (alpha < 35 && localBg.length < 24) {
-          localBg.push([origData[origIdx], origData[origIdx + 1], origData[origIdx + 2]]);
-        } else if (alpha > 220 && localFg.length < 24) {
-          localFg.push([origData[origIdx], origData[origIdx + 1], origData[origIdx + 2]]);
-        }
-      }
-    }
-
-    localBgSamplesRef.current = localBg;
-    localFgSamplesRef.current = localFg;
   }, []);
 
   // Composite render: draws original image clipped by mask canvas
@@ -400,6 +381,7 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
         // No cutout exists yet: initialize full mask as white (original visible)
         maskCtx.fillStyle = '#ffffff';
         maskCtx.fillRect(0, 0, width, height);
+        setTool('erase');
       }
 
       maskCanvasRef.current = maskCanvas;
@@ -436,6 +418,10 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
         const initialZoom = Math.min(1, Math.max(0.05, Math.min(scaleW, scaleH)));
         setZoom(initialZoom);
         setPan({ x: 0, y: 0 });
+
+        // Set initial brush size that feels like ~42px on screen regardless of image resolution
+        const initialBrush = Math.max(16, Math.min(300, Math.round(42 / initialZoom)));
+        setBrushSize(initialBrush);
       }
 
       setIsReady(true);
@@ -464,10 +450,139 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
     renderComposite();
   }, [renderComposite, isPeekingOriginal]);
 
-  // SMART BRUSH: Evaluates pixels under the brush and automatically detects
-  // whether each pixel belongs to the foreground subject (RESTORES it) or background (REMOVES it)
+  // High-speed, high-precision Magic Wand Flood Fill (Edge-aware contour barrier)
+  const executeMagicWand = useCallback(
+    (startX: number, startY: number, mode: 'restore' | 'erase') => {
+      const mask = maskCanvasRef.current;
+      const orig = origCanvasRef.current;
+      if (!mask || !orig) return;
+      const maskCtx = mask.getContext('2d', { willReadFrequently: true });
+      if (!maskCtx) return;
+
+      const width = mask.width;
+      const height = mask.height;
+      const origData = origPixelsRef.current;
+      if (!origData) return;
+
+      const px = Math.min(width - 1, Math.max(0, Math.round(startX)));
+      const py = Math.min(height - 1, Math.max(0, Math.round(startY)));
+      const startIdx = (py * width + px) * 4;
+
+      // Exact clicked pixel color from original photo
+      const targetR = origData[startIdx];
+      const targetG = origData[startIdx + 1];
+      const targetB = origData[startIdx + 2];
+
+      // Precise tolerance calibration:
+      // Sharp: 20 (strict outline retention)
+      // Balanced: 32 (clean subject/background separation without bleeding)
+      // Soft: 48 (accommodates subtle gradients and shadows)
+      const tolerance = smartSensitivity === 'sharp' ? 20 : smartSensitivity === 'soft' ? 48 : 32;
+      const edgeMultiplier = 1.35;
+
+      const maskImgData = maskCtx.getImageData(0, 0, width, height);
+      const maskData = maskImgData.data;
+
+      const totalPixels = width * height;
+      const visited = new Uint8Array(totalPixels);
+      const queue = new Int32Array(totalPixels);
+      let head = 0;
+      let tail = 0;
+
+      const startPos = py * width + px;
+      visited[startPos] = 1;
+      queue[tail++] = startPos;
+
+      const bgSamples = globalBgSamplesRef.current;
+
+      while (head < tail) {
+        const curr = queue[head++];
+        const cx = curr % width;
+        const cy = (curr / width) | 0;
+        const idx = curr * 4;
+
+        const pr = origData[idx];
+        const pg = origData[idx + 1];
+        const pb = origData[idx + 2];
+
+        // Apply action to current pixel
+        if (mode === 'erase') {
+          maskData[idx + 3] = 0;
+        } else {
+          maskData[idx] = 255;
+          maskData[idx + 1] = 255;
+          maskData[idx + 2] = 255;
+          maskData[idx + 3] = 255;
+        }
+
+        // Test neighbor for flood expansion with edge-barrier protection
+        const checkNeighbor = (nPos: number) => {
+          if (visited[nPos]) return;
+          const nIdx = nPos * 4;
+          const nr = origData[nIdx];
+          const ng = origData[nIdx + 1];
+          const nb = origData[nIdx + 2];
+
+          // 1. Edge-barrier: if local contrast jump between current pixel and neighbor is sharp (> 44),
+          // this is an object contour boundary: stop flood fill to prevent leaking into subject!
+          const localJump = getPerceptualColorDist(pr, pg, pb, nr, ng, nb);
+          if (localJump > 44) return;
+
+          // 2. Global distance to clicked target color
+          const distToTarget = getPerceptualColorDist(nr, ng, nb, targetR, targetG, targetB);
+
+          // 3. If Smart AI is ON, protect against leaking into known background during restore
+          if (isSmartAi && mode === 'restore' && bgSamples.length > 0) {
+            let minBgDist = Infinity;
+            for (let i = 0; i < bgSamples.length; i++) {
+              const bg = bgSamples[i];
+              const d = getPerceptualColorDist(nr, ng, nb, bg[0], bg[1], bg[2]);
+              if (d < minBgDist) minBgDist = d;
+            }
+            if (minBgDist < 20 && minBgDist < distToTarget) {
+              return; // Do not leak into background
+            }
+          }
+
+          if (distToTarget <= tolerance) {
+            visited[nPos] = 1;
+            queue[tail++] = nPos;
+          } else if (distToTarget < tolerance * edgeMultiplier) {
+            // Anti-aliased boundary feathering
+            visited[nPos] = 1;
+            const factor = (distToTarget - tolerance) / (tolerance * (edgeMultiplier - 1));
+            if (mode === 'erase') {
+              maskData[nIdx + 3] = Math.min(maskData[nIdx + 3], Math.round(255 * factor));
+            } else {
+              const restoreAlpha = Math.round(255 * (1 - factor));
+              maskData[nIdx] = 255;
+              maskData[nIdx + 1] = 255;
+              maskData[nIdx + 2] = 255;
+              maskData[nIdx + 3] = Math.max(maskData[nIdx + 3], restoreAlpha);
+            }
+          }
+        };
+
+        if (cx > 0) checkNeighbor(curr - 1);
+        if (cx < width - 1) checkNeighbor(curr + 1);
+        if (cy > 0) checkNeighbor(curr - width);
+        if (cy < height - 1) checkNeighbor(curr + width);
+      }
+
+      maskCtx.putImageData(maskImgData, 0, 0);
+      renderComposite();
+      pushHistory();
+      refreshColorSamples();
+      setHasUnsavedChanges(true);
+    },
+    [isSmartAi, smartSensitivity, renderComposite, pushHistory, refreshColorSamples]
+  );
+
+  // SMART AI BRUSH: Intelligently distinguishes foreground subject from background
+  // When currentTool === 'erase': selectively eliminates background matching the clicked color, while strictly preserving high-contrast subject edges
+  // When currentTool === 'restore': restores foreground subject details while preventing background from bleeding in
   const drawSmartBrushPoint = useCallback(
-    (cx: number, cy: number) => {
+    (cx: number, cy: number, currentTool: 'restore' | 'erase') => {
       const mask = maskCanvasRef.current;
       const orig = origCanvasRef.current;
       if (!mask || !orig) return;
@@ -493,14 +608,37 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
       const maskImgData = maskCtx.getImageData(minX, minY, regionW, regionH);
       const maskData = maskImgData.data;
 
-      const bgSamples = globalBgSamplesRef.current;
-      const fgSamples = globalFgSamplesRef.current;
-      const localBg = localBgSamplesRef.current;
-      const localFg = localFgSamplesRef.current;
+      // Seed & Target colors for this stroke
+      let seed = strokeSeedColorRef.current;
+      const centerColor = sampleColorAt(cx, cy);
+      if (!seed && centerColor) {
+        strokeSeedColorRef.current = centerColor;
+        seed = centerColor;
+      }
 
-      // Sensitivity tuning: controls how aggressively edges snap or feather
-      const edgeThreshold = smartSensitivity === 'sharp' ? 1.08 : smartSensitivity === 'soft' ? 1.25 : 1.15;
+      // Sensitivity tuning:
+      // Sharp: lower tolerance, stricter edge retention
+      // Balanced: optimal for products, portraits, walls
+      // Soft: wider tolerance for hair, soft shadows, lace
+      const tolerance = smartSensitivity === 'sharp' ? 32 : smartSensitivity === 'soft' ? 70 : 48;
+      const edgeMultiplier = smartSensitivity === 'sharp' ? 1.35 : smartSensitivity === 'soft' ? 2.0 : 1.6;
       const falloffStart = brushHardness * radius;
+
+      // In Smart Erase, anchor to the clicked background color (seed).
+      // Only adapt to centerColor if it's within tolerance of seed (smooth gradient in background).
+      // If centerColor deviates strongly from seed, the cursor has moved over the subject edge!
+      // In that case, keep activeTarget = seed so we NEVER erase the subject!
+      let activeTarget = seed || centerColor;
+      if (seed && centerColor) {
+        const dCenterToSeed = getPerceptualColorDist(seed[0], seed[1], seed[2], centerColor[0], centerColor[1], centerColor[2]);
+        if (dCenterToSeed <= tolerance * 1.15) {
+          activeTarget = centerColor;
+        } else {
+          activeTarget = seed; // Firmly lock to background!
+        }
+      }
+
+      const bgSamples = globalBgSamplesRef.current;
 
       let changed = false;
 
@@ -521,63 +659,80 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
           const pb = origData[origIdx + 2];
           const currentAlpha = maskData[maskIdx + 3];
 
-          // Compute distance to background samples (local samples weighted 0.8 to give local precedence)
-          let minBgDistSq = Infinity;
-          for (let i = 0; i < localBg.length; i++) {
-            const s = localBg[i];
-            const dr = pr - s[0];
-            const dg = pg - s[1];
-            const db = pb - s[2];
-            const d = (2 * dr * dr + 4 * dg * dg + 3 * db * db) * 0.8;
-            if (d < minBgDistSq) minBgDistSq = d;
-          }
-          for (let i = 0; i < bgSamples.length; i++) {
-            const s = bgSamples[i];
-            const dr = pr - s[0];
-            const dg = pg - s[1];
-            const db = pb - s[2];
-            const d = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
-            if (d < minBgDistSq) minBgDistSq = d;
-          }
-
-          // Compute distance to foreground samples
-          let minFgDistSq = Infinity;
-          for (let i = 0; i < localFg.length; i++) {
-            const s = localFg[i];
-            const dr = pr - s[0];
-            const dg = pg - s[1];
-            const db = pb - s[2];
-            const d = (2 * dr * dr + 4 * dg * dg + 3 * db * db) * 0.8;
-            if (d < minFgDistSq) minFgDistSq = d;
-          }
-          for (let i = 0; i < fgSamples.length; i++) {
-            const s = fgSamples[i];
-            const dr = pr - s[0];
-            const dg = pg - s[1];
-            const db = pb - s[2];
-            const d = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
-            if (d < minFgDistSq) minFgDistSq = d;
-          }
-
-          const distBg = Math.sqrt(minBgDistSq);
-          const distFg = Math.sqrt(minFgDistSq);
+          const dist = Math.sqrt(distSq);
+          const distRatio = radius > 0 ? dist / radius : 0;
 
           let targetAlpha: number;
-          if (distBg > distFg * edgeThreshold) {
-            // Pixel matches foreground subject -> RESTORE
-            targetAlpha = 255;
-          } else if (distFg > distBg * edgeThreshold) {
-            // Pixel matches background -> REMOVE
-            targetAlpha = 0;
+
+          if (currentTool === 'erase') {
+            // SMART ERASING:
+            // Calculate distance to active background color, stroke seed, and verified background samples
+            let minEraseDist = Infinity;
+            if (activeTarget) {
+              minEraseDist = getPerceptualColorDist(pr, pg, pb, activeTarget[0], activeTarget[1], activeTarget[2]);
+            }
+            if (seed && seed !== activeTarget) {
+              const dSeed = getPerceptualColorDist(pr, pg, pb, seed[0], seed[1], seed[2]);
+              if (dSeed < minEraseDist) minEraseDist = dSeed;
+            }
+            for (let i = 0; i < bgSamples.length; i++) {
+              const s = bgSamples[i];
+              const d = getPerceptualColorDist(pr, pg, pb, s[0], s[1], s[2]);
+              if (d < minEraseDist) minEraseDist = d;
+            }
+
+            if (minEraseDist <= tolerance) {
+              // Matches background -> ERASE completely!
+              targetAlpha = 0;
+            } else if (minEraseDist >= tolerance * edgeMultiplier) {
+              // High contrast edge of foreground subject -> PROTECT!
+              targetAlpha = currentAlpha;
+            } else {
+              // Anti-aliased transition edge
+              const t = (minEraseDist - tolerance) / (tolerance * (edgeMultiplier - 1));
+              targetAlpha = Math.round(currentAlpha * Math.max(0, Math.min(1, t)));
+            }
           } else {
-            // Transition boundary / soft feather
-            const factor = (distBg - distFg) / (distBg + distFg + 0.0001); // -1 to 1
-            targetAlpha = Math.round(128 + factor * 180);
-            targetAlpha = Math.max(0, Math.min(255, targetAlpha));
+            // SMART RESTORING:
+            // If inside the inner core of the brush (distRatio <= 0.48), restore solidly to 255.
+            // This guarantees numbers, logos, hands, text, and details on subjects restore 100% without streaks or holes.
+            if (distRatio <= 0.48 || currentAlpha >= 25) {
+              targetAlpha = 255;
+            } else {
+              // On the outer rim of the brush, prevent spilling over into exterior background
+              let minSubjectDist = Infinity;
+              if (activeTarget) {
+                minSubjectDist = getPerceptualColorDist(pr, pg, pb, activeTarget[0], activeTarget[1], activeTarget[2]);
+              }
+              if (seed && seed !== activeTarget) {
+                const dSeed = getPerceptualColorDist(pr, pg, pb, seed[0], seed[1], seed[2]);
+                if (dSeed < minSubjectDist) minSubjectDist = dSeed;
+              }
+
+              // Check against known background samples to prevent bleeding into transparent background
+              let minBgDist = Infinity;
+              for (let i = 0; i < bgSamples.length; i++) {
+                const s = bgSamples[i];
+                const d = getPerceptualColorDist(pr, pg, pb, s[0], s[1], s[2]);
+                if (d < minBgDist) minBgDist = d;
+              }
+
+              if (bgSamples.length > 0 && minBgDist < 24 && minBgDist < minSubjectDist) {
+                // Verified exterior background -> do not restore!
+                targetAlpha = 0;
+              } else if (minSubjectDist > tolerance * edgeMultiplier) {
+                // High contrast boundary from restored subject -> keep exterior background transparent!
+                targetAlpha = 0;
+              } else if (minSubjectDist > tolerance) {
+                const t = (tolerance * edgeMultiplier - minSubjectDist) / (tolerance * (edgeMultiplier - 1));
+                targetAlpha = Math.round(255 * Math.max(0, Math.min(1, t)));
+              } else {
+                targetAlpha = 255;
+              }
+            }
           }
 
           // Radial feather falloff according to brush edge hardness
-          const dist = Math.sqrt(distSq);
           let radialWeight = 1;
           if (dist > falloffStart && radius > falloffStart) {
             radialWeight = 1 - (dist - falloffStart) / (radius - falloffStart);
@@ -599,7 +754,7 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
         maskCtx.putImageData(maskImgData, minX, minY);
       }
     },
-    [brushSize, brushHardness, smartSensitivity]
+    [brushSize, brushHardness, smartSensitivity, sampleColorAt]
   );
 
   // Standard Erase or Restore Brush Point
@@ -644,20 +799,21 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
   // Dispatch brush stamp depending on tool mode
   const drawBrushPoint = useCallback(
     (x: number, y: number) => {
-      if (tool === 'smart') {
-        drawSmartBrushPoint(x, y);
+      if (tool === 'pan') return;
+      if (isSmartAi) {
+        drawSmartBrushPoint(x, y, tool);
       } else {
         drawStandardBrushPoint(x, y);
       }
     },
-    [tool, drawSmartBrushPoint, drawStandardBrushPoint]
+    [tool, isSmartAi, drawSmartBrushPoint, drawStandardBrushPoint]
   );
 
   // Interpolate brush line between lastPoint and currentPoint for silky-smooth continuous strokes
   const drawBrushStroke = useCallback(
     (x1: number, y1: number, x2: number, y2: number) => {
       const dist = Math.hypot(x2 - x1, y2 - y1);
-      const step = tool === 'smart'
+      const step = isSmartAi
         ? Math.max(2, (brushSize / 2) * 0.35)
         : Math.max(1, (brushSize / 2) * (1 - brushHardness * 0.5) * 0.4);
 
@@ -674,7 +830,7 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
         drawBrushPoint(interpX, interpY);
       }
     },
-    [brushSize, brushHardness, tool, drawBrushPoint]
+    [brushSize, brushHardness, isSmartAi, drawBrushPoint]
   );
 
   // Coordinate mapper from screen pointer event to canvas pixel coordinates
@@ -717,14 +873,24 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
       return;
     }
 
-    if (e.button !== 0) return; // Only primary button for brush
+    if (e.button !== 0) return; // Only primary button for brush / magic wand
+
+    const { x, y } = getCanvasCoords(e);
+
+    // Magic Wand: 1-click intelligent flood erase or restore
+    if (isMagicWand && (tool === 'restore' || tool === 'erase')) {
+      executeMagicWand(x, y, tool);
+      return;
+    }
 
     isDrawingRef.current = true;
-    const { x, y } = getCanvasCoords(e);
     lastPointRef.current = { x, y };
 
-    if (tool === 'smart') {
-      sampleLocalNeighborhood(x, y, brushSize * 1.6);
+    if (isSmartAi) {
+      const clickedColor = sampleColorAt(x, y);
+      if (clickedColor) {
+        strokeSeedColorRef.current = clickedColor;
+      }
     }
 
     drawBrushPoint(x, y);
@@ -776,6 +942,7 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
     if (isDrawingRef.current) {
       isDrawingRef.current = false;
       lastPointRef.current = null;
+      strokeSeedColorRef.current = null;
       try {
         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       } catch {
@@ -795,6 +962,7 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
       if (isDrawingRef.current) {
         isDrawingRef.current = false;
         lastPointRef.current = null;
+        strokeSeedColorRef.current = null;
         pushHistory();
         refreshColorSamples();
       }
@@ -822,9 +990,12 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
     handleSave,
     onClose,
     setTool,
+    setIsSmartAi,
+    setIsMagicWand,
     setBrushSize,
     setIsPeekingOriginal,
     handleFitZoom,
+    isMagicWand,
   });
 
   useEffect(() => {
@@ -834,9 +1005,12 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
       handleSave,
       onClose,
       setTool,
+      setIsSmartAi,
+      setIsMagicWand,
       setBrushSize,
       setIsPeekingOriginal,
       handleFitZoom,
+      isMagicWand,
     };
   });
 
@@ -896,10 +1070,6 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
 
       // Tool switches (when Ctrl/Cmd is not held)
       if (!isCtrlOrMeta) {
-        if (key === 's' || code === 'KeyS' || key === 'b' || code === 'KeyB' || key === '3') {
-          handlersRef.current.setTool('smart');
-          return;
-        }
         if (key === 'r' || code === 'KeyR' || key === '1') {
           handlersRef.current.setTool('restore');
           return;
@@ -908,8 +1078,23 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
           handlersRef.current.setTool('erase');
           return;
         }
+        if (key === 'w' || code === 'KeyW' || key === '3') {
+          e.preventDefault();
+          handlersRef.current.setIsMagicWand((prev) => !prev);
+          return;
+        }
         if (key === 'h' || code === 'KeyH' || key === '4') {
           handlersRef.current.setTool('pan');
+          return;
+        }
+        if (key === 's' || code === 'KeyS') {
+          e.preventDefault();
+          if (handlersRef.current.isMagicWand) {
+            handlersRef.current.setIsMagicWand(false);
+            handlersRef.current.setIsSmartAi(true);
+          } else {
+            handlersRef.current.setIsSmartAi((prev) => !prev);
+          }
           return;
         }
         if (key === 'o' || code === 'KeyO') {
@@ -926,12 +1111,12 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
       // Brush sizing: [ and ] or - and +
       if (key === '[' || key === '{' || key === '-') {
         e.preventDefault();
-        handlersRef.current.setBrushSize((s) => Math.max(2, s - (e.shiftKey ? 15 : 5)));
+        handlersRef.current.setBrushSize((s) => Math.max(4, s - (e.shiftKey ? 30 : 10)));
         return;
       }
       if (key === ']' || key === '}' || key === '=' || key === '+') {
         e.preventDefault();
-        handlersRef.current.setBrushSize((s) => Math.min(200, s + (e.shiftKey ? 15 : 5)));
+        handlersRef.current.setBrushSize((s) => Math.min(600, s + (e.shiftKey ? 30 : 10)));
         return;
       }
 
@@ -1106,14 +1291,41 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-white/40 truncate hidden sm:block">
-                Use <strong className="text-fuchsia-500 dark:text-fuchsia-400">Smart Brush</strong> to auto-detect what to restore & remove, or manual{' '}
-                <strong className="text-emerald-500">Restore</strong> and <strong className="text-red-500">Erase</strong>.
+                {isSmartAi ? (
+                  <>
+                    <span className="inline-flex items-center gap-1 font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                      <Sparkles className="w-3 h-3" /> Smart AI Active:
+                    </span>{' '}
+                    {tool === 'restore'
+                      ? 'Intelligently restores subject details while protecting background'
+                      : tool === 'erase'
+                      ? 'Intelligently removes background halos while protecting subject edges'
+                      : 'Pan around image'}
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold text-slate-700 dark:text-white/70">Manual Mode:</span>{' '}
+                    {tool === 'restore' ? 'Directly restoring original pixels' : tool === 'erase' ? 'Directly erasing pixels to transparent' : 'Pan around image'}
+                  </>
+                )}
               </p>
             </div>
           </div>
 
           {/* Top Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* 1-Click Auto AI BG Removal */}
+            <button
+              type="button"
+              disabled={isAutoProcessing}
+              onClick={() => handleReRunAutoBg('ai')}
+              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600/20 to-fuchsia-600/20 hover:from-purple-600/30 hover:to-fuchsia-600/30 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+              title="1-Click Automatic AI Background Removal using neural model"
+            >
+              {isAutoProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" /> : <Sparkles className="w-3.5 h-3.5 text-purple-400" />}
+              <span>Auto AI</span>
+            </button>
+
             {/* Hold to Peek Original */}
             <button
               type="button"
@@ -1168,91 +1380,214 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
 
         {/* Secondary Control Bar (Tool selection, brush sizing, undo/redo, backdrop) */}
         <div className="px-3 sm:px-4 py-2 border-b border-slate-200 dark:border-white/10 bg-slate-100/70 dark:bg-[#111] flex items-center justify-between gap-3 overflow-x-auto shrink-0 text-xs">
-          {/* Tool Modes */}
-          <div className="flex items-center gap-1 bg-slate-200/80 dark:bg-white/5 p-1 rounded-xl border border-slate-300/80 dark:border-white/10">
-            {/* Smart Brush Button */}
+          {/* Tool Modes & Smart AI / Magic Wand Toggles */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Smart AI Brush ON / OFF Toggle Button */}
             <button
               type="button"
-              onClick={() => setTool('smart')}
-              className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                tool === 'smart'
-                  ? 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 text-white shadow-md shadow-fuchsia-600/30'
-                  : 'text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
+              onClick={() => {
+                if (isMagicWand) {
+                  // Switch directly from Magic Wand back to Smart AI Brush
+                  setIsMagicWand(false);
+                  setIsSmartAi(true);
+                } else {
+                  setIsSmartAi((prev) => !prev);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+                isSmartAi && !isMagicWand
+                  ? 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 text-white border-fuchsia-400/50 shadow-md shadow-fuchsia-600/30'
+                  : 'bg-slate-200/90 dark:bg-white/5 text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300 dark:hover:bg-white/10 border-slate-300 dark:border-white/10'
               }`}
-              title="Smart AI Brush (S or 3): Detects what to restore & what to remove automatically in one stroke"
+              title="Smart AI Brush (Press S): Auto-detects and protects subject contours while brushing. Clicking switches from Magic Wand back to Smart AI Brush."
             >
-              <Wand2 className="w-3.5 h-3.5" />
-              <span>Smart Brush</span>
-              <span className="text-[9px] px-1 py-0.2 rounded bg-white/20 text-white uppercase font-black tracking-wider">AI</span>
+              <div className="flex items-center gap-1.5">
+                <Wand2 className={`w-3.5 h-3.5 ${isSmartAi && !isMagicWand ? 'text-yellow-300 animate-pulse' : 'text-slate-400 dark:text-white/40'}`} />
+                <span className="text-xs">Smart AI Brush</span>
+              </div>
+              <span
+                className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider transition-colors ${
+                  isSmartAi && !isMagicWand
+                    ? 'bg-emerald-400 text-slate-950 shadow-xs'
+                    : 'bg-slate-300 dark:bg-white/10 text-slate-500 dark:text-white/40'
+                }`}
+              >
+                {isSmartAi && !isMagicWand ? 'ON' : 'OFF'}
+              </span>
             </button>
 
-            {/* Restore Brush Button */}
+            {/* Magic Wand ON / OFF Toggle Button */}
             <button
               type="button"
-              onClick={() => setTool('restore')}
-              className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                tool === 'restore'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
+              onClick={() => setIsMagicWand((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+                isMagicWand
+                  ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white border-amber-400/50 shadow-md shadow-amber-500/30'
+                  : 'bg-slate-200/90 dark:bg-white/5 text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300 dark:hover:bg-white/10 border-slate-300 dark:border-white/10'
               }`}
-              title="Restore Subject Brush (R or 1): Paints back original photo pixels"
+              title="Toggle Magic Wand (Press W or 3): 1-click intelligent flood fills matching connected color areas (Restore or Erase)."
             >
-              <Paintbrush className="w-3.5 h-3.5" />
-              <span>Restore</span>
+              <div className="flex items-center gap-1.5">
+                <Sparkles className={`w-3.5 h-3.5 ${isMagicWand ? 'text-yellow-200 animate-spin' : 'text-slate-400 dark:text-white/40'}`} />
+                <span className="text-xs">Magic Wand</span>
+              </div>
+              <span
+                className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider transition-colors ${
+                  isMagicWand
+                    ? 'bg-amber-300 text-slate-950 shadow-xs'
+                    : 'bg-slate-300 dark:bg-white/10 text-slate-500 dark:text-white/40'
+                }`}
+              >
+                {isMagicWand ? 'ON' : 'OFF'}
+              </span>
             </button>
 
-            {/* Erase Brush Button */}
-            <button
-              type="button"
-              onClick={() => setTool('erase')}
-              className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                tool === 'erase'
-                  ? 'bg-red-600 text-white shadow-xs'
-                  : 'text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
-              }`}
-              title="Erase Background Brush (E or 2): Removes background to transparent"
-            >
-              <Eraser className="w-3.5 h-3.5" />
-              <span>Erase</span>
-            </button>
+            {/* Tool Selection (Restore, Erase, Pan) */}
+            <div className="flex items-center gap-1 bg-slate-200/80 dark:bg-white/5 p-1 rounded-xl border border-slate-300/80 dark:border-white/10">
+              {/* Restore Button */}
+              <button
+                type="button"
+                onClick={() => setTool('restore')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  tool === 'restore'
+                    ? isMagicWand
+                      ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md shadow-emerald-600/30'
+                      : isSmartAi
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
+                      : 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
+                }`}
+                title={
+                  isMagicWand
+                    ? 'Magic Restore (R or 1): 1-click on subject detail to instantly flood-restore that connected region'
+                    : isSmartAi
+                    ? 'Smart AI Restore (R or 1): Intelligently paints back subject details while ignoring background'
+                    : 'Manual Restore (R or 1): Paints back all original photo pixels without AI'
+                }
+              >
+                {isMagicWand ? <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> : <Paintbrush className="w-3.5 h-3.5" />}
+                <span>{isMagicWand ? 'Magic Restore' : 'Restore'}</span>
+                {isMagicWand ? (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-400 text-slate-950 uppercase font-black tracking-wider">
+                    1-CLICK
+                  </span>
+                ) : isSmartAi ? (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-white/20 text-white uppercase font-black tracking-wider">
+                    AI
+                  </span>
+                ) : null}
+              </button>
 
-            {/* Pan Hand Tool Button */}
-            <button
-              type="button"
-              onClick={() => setTool('pan')}
-              className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                tool === 'pan'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
-              }`}
-              title="Pan Tool (H, 4, or Spacebar+Drag)"
-            >
-              <Hand className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Pan</span>
-            </button>
+              {/* Erase Button */}
+              <button
+                type="button"
+                onClick={() => setTool('erase')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  tool === 'erase'
+                    ? isMagicWand
+                      ? 'bg-gradient-to-r from-rose-600 via-red-600 to-orange-600 text-white shadow-md shadow-rose-600/30'
+                      : isSmartAi
+                      ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-600/30'
+                      : 'bg-red-600 text-white shadow-xs'
+                    : 'text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
+                }`}
+                title={
+                  isMagicWand
+                    ? 'Magic Erase (E or 2): 1-click on background to instantly flood-erase that connected color'
+                    : isSmartAi
+                    ? 'Smart AI Erase (E or 2): Eliminates background halos while protecting subject edges'
+                    : 'Manual Erase (E or 2): Removes pixels directly to transparent without AI'
+                }
+              >
+                {isMagicWand ? <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> : <Eraser className="w-3.5 h-3.5" />}
+                <span>{isMagicWand ? 'Magic Erase' : 'Erase'}</span>
+                {isMagicWand ? (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-400 text-slate-950 uppercase font-black tracking-wider">
+                    1-CLICK
+                  </span>
+                ) : isSmartAi ? (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-white/20 text-white uppercase font-black tracking-wider">
+                    AI
+                  </span>
+                ) : null}
+              </button>
+
+              {/* Pan Hand Tool Button */}
+              <button
+                type="button"
+                onClick={() => setTool('pan')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  tool === 'pan'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/5'
+                }`}
+                title="Pan Tool (H, 4, or Spacebar+Drag)"
+              >
+                <Hand className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Pan</span>
+              </button>
+            </div>
           </div>
 
           {/* Brush Settings: Size & Mode/Edge */}
           <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
-            {/* Size Slider */}
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 dark:text-white/50 font-medium">Size:</span>
+            {/* Size Slider & Quick Presets */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className="text-slate-500 dark:text-white/50 font-medium text-xs sm:text-sm">Size:</span>
               <input
                 type="range"
-                min="2"
-                max="160"
+                min="4"
+                max="600"
+                step="2"
                 value={brushSize}
                 onChange={(e) => setBrushSize(parseInt(e.target.value, 10))}
                 onPointerUp={(e) => (e.target as HTMLElement).blur()}
-                className="w-20 sm:w-28 h-1.5 bg-slate-300 dark:bg-white/20 rounded-full appearance-none cursor-pointer accent-fuchsia-600 dark:accent-fuchsia-500"
+                className="w-20 sm:w-28 md:w-36 h-1.5 bg-slate-300 dark:bg-white/20 rounded-full appearance-none cursor-pointer accent-fuchsia-600 dark:accent-fuchsia-500"
               />
-              <span className="font-mono font-bold text-fuchsia-600 dark:text-fuchsia-400 w-8 text-right">
-                {brushSize}px
-              </span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="4"
+                  max="800"
+                  value={brushSize}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) setBrushSize(Math.max(4, Math.min(800, val)));
+                  }}
+                  className="w-12 px-1 py-0.5 text-xs font-mono font-bold text-center bg-slate-200/90 dark:bg-white/10 rounded border border-slate-300/80 dark:border-white/20 text-fuchsia-600 dark:text-fuchsia-400 focus:outline-hidden focus:ring-1 focus:ring-fuchsia-500"
+                  title="Directly enter brush size (4-800px)"
+                />
+                <span className="text-[11px] font-mono text-slate-500 dark:text-white/40">px</span>
+              </div>
+
+              {/* Quick Size Presets */}
+              <div className="hidden xl:flex items-center gap-1 bg-slate-200/60 dark:bg-white/5 p-0.5 rounded-md border border-slate-300/60 dark:border-white/10">
+                {[
+                  { label: '24', val: 24 },
+                  { label: '64', val: 64 },
+                  { label: '140', val: 140 },
+                  { label: '260', val: 260 },
+                  { label: '480', val: 480 },
+                ].map((preset) => (
+                  <button
+                    key={preset.val}
+                    type="button"
+                    onClick={() => setBrushSize(preset.val)}
+                    className={`px-1.5 py-0.5 text-[10px] font-mono font-medium rounded transition-colors cursor-pointer ${
+                      Math.abs(brushSize - preset.val) < 8
+                        ? 'bg-fuchsia-500/20 text-fuchsia-600 dark:text-fuchsia-300 font-bold'
+                        : 'text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title={`Set brush size to ${preset.val}px`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Smart Sensitivity Pills (When Smart Brush active) */}
-            {tool === 'smart' ? (
+            {/* Smart Sensitivity Pills (When Smart AI active) */}
+            {isSmartAi ? (
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-500 dark:text-white/50 font-medium hidden sm:inline">Smart Mode:</span>
                 <div className="flex items-center bg-slate-200/80 dark:bg-white/10 rounded-lg p-0.5 border border-slate-300/80 dark:border-white/10">
@@ -1469,6 +1804,10 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
               : 'bg-[#00ff40]'
           }`}
           onPointerEnter={() => setIsInsideCanvas(true)}
+          onPointerMove={(e) => {
+            setIsInsideCanvas(true);
+            setCursorPos({ x: e.clientX, y: e.clientY });
+          }}
           onPointerLeave={() => {
             setIsInsideCanvas(false);
             setCursorPos(null);
@@ -1507,36 +1846,58 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
               style={{
                 left: `${cursorPos.x}px`,
                 top: `${cursorPos.y}px`,
-                width: `${getScreenBrushSize()}px`,
-                height: `${getScreenBrushSize()}px`,
+                width: isMagicWand ? '36px' : `${getScreenBrushSize()}px`,
+                height: isMagicWand ? '36px' : `${getScreenBrushSize()}px`,
                 borderColor:
-                  tool === 'smart'
-                    ? 'rgba(217, 70, 239, 0.95)' // Fuchsia for Smart Brush
+                  isMagicWand
+                    ? tool === 'restore'
+                      ? 'rgba(16, 185, 129, 0.95)'
+                      : 'rgba(245, 158, 11, 0.95)'
                     : tool === 'erase'
-                    ? 'rgba(239, 68, 68, 0.9)' // Red for Erase
-                    : 'rgba(16, 185, 129, 0.9)', // Emerald for Restore
+                    ? isSmartAi
+                      ? 'rgba(244, 63, 94, 0.95)'
+                      : 'rgba(239, 68, 68, 0.9)'
+                    : isSmartAi
+                    ? 'rgba(16, 185, 129, 0.95)'
+                    : 'rgba(16, 185, 129, 0.9)',
                 backgroundColor:
-                  tool === 'smart'
-                    ? 'rgba(168, 85, 247, 0.15)'
+                  isMagicWand
+                    ? tool === 'restore'
+                      ? 'rgba(16, 185, 129, 0.18)'
+                      : 'rgba(245, 158, 11, 0.18)'
                     : tool === 'erase'
-                    ? 'rgba(239, 68, 68, 0.12)'
+                    ? isSmartAi
+                      ? 'rgba(244, 63, 94, 0.16)'
+                      : 'rgba(239, 68, 68, 0.12)'
+                    : isSmartAi
+                    ? 'rgba(16, 185, 129, 0.16)'
                     : 'rgba(16, 185, 129, 0.12)',
                 boxShadow:
-                  tool === 'smart'
-                    ? '0 0 12px rgba(217, 70, 239, 0.6), inset 0 0 6px rgba(168, 85, 247, 0.4)'
+                  isMagicWand
+                    ? tool === 'restore'
+                      ? '0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 14px rgba(16, 185, 129, 0.7), inset 0 0 8px rgba(16, 185, 129, 0.4)'
+                      : '0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 14px rgba(245, 158, 11, 0.7), inset 0 0 8px rgba(245, 158, 11, 0.4)'
+                    : isSmartAi
+                    ? tool === 'erase'
+                      ? '0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 12px rgba(244, 63, 94, 0.6), inset 0 0 6px rgba(244, 63, 94, 0.35)'
+                      : '0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 12px rgba(16, 185, 129, 0.6), inset 0 0 6px rgba(16, 185, 129, 0.35)'
                     : tool === 'erase'
-                    ? '0 0 8px rgba(239, 68, 68, 0.5)'
-                    : '0 0 8px rgba(16, 185, 129, 0.5)',
+                    ? '0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 8px rgba(239, 68, 68, 0.5)'
+                    : '0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 8px rgba(16, 185, 129, 0.5)',
               }}
             >
               <div
-                className="w-1.5 h-1.5 rounded-full"
+                className="w-1.5 h-1.5 rounded-full ring-1 ring-black/80"
                 style={{
                   backgroundColor:
-                    tool === 'smart'
-                      ? '#d946ef'
+                    isMagicWand
+                      ? tool === 'restore'
+                        ? '#10b981'
+                        : '#f59e0b'
                       : tool === 'erase'
-                      ? '#ef4444'
+                      ? isSmartAi
+                        ? '#f43f5e'
+                        : '#ef4444'
                       : '#10b981',
                 }}
               />
@@ -1615,15 +1976,19 @@ export const ImageTouchUpModal: React.FC<ImageTouchUpModalProps> = ({
                 </div>
                 <div className="space-y-1.5 text-[11px] text-white/80">
                   <div className="flex justify-between items-center">
-                    <span className="text-fuchsia-300 font-semibold">Smart Brush (AI Auto):</span>
-                    <kbd className="font-mono bg-fuchsia-500/25 text-fuchsia-200 px-1.5 py-0.5 rounded text-[10px]">S or 3</kbd>
+                    <span className="text-fuchsia-300 font-semibold">Toggle Smart AI (ON/OFF):</span>
+                    <kbd className="font-mono bg-fuchsia-500/25 text-fuchsia-200 px-1.5 py-0.5 rounded text-[10px]">S</kbd>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span>Restore Subject:</span>
+                    <span className="text-amber-300 font-semibold">Toggle Magic Wand (ON/OFF):</span>
+                    <kbd className="font-mono bg-amber-500/25 text-amber-200 px-1.5 py-0.5 rounded text-[10px]">W or 3</kbd>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Restore (Brush / Magic):</span>
                     <kbd className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-[10px]">R or 1</kbd>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span>Erase Background:</span>
+                    <span>Erase (Brush / Magic):</span>
                     <kbd className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-[10px]">E or 2</kbd>
                   </div>
                   <div className="flex justify-between items-center">

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Layers, ShieldCheck, Zap, Trash2, LayoutGrid, List, Sun, Moon } from 'lucide-react';
+import { Layers, ShieldCheck, Zap, Trash2, LayoutGrid, List, Sun, Moon, Palette } from 'lucide-react';
 import { ViewMode } from '../types';
+import { AppTheme, UiLookStyle, getThemeConfig, getUiStyleConfig } from '../utils/themePresets';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -10,6 +11,9 @@ interface HeaderProps {
   totalImages: number;
   onClearAll: () => void;
   isProcessing: boolean;
+  currentTheme?: AppTheme;
+  currentStyle?: UiLookStyle;
+  onOpenThemeModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,7 +24,12 @@ export const Header: React.FC<HeaderProps> = ({
   totalImages,
   onClearAll,
   isProcessing,
+  currentTheme = 'midnight-pro' as AppTheme,
+  currentStyle = 'default' as UiLookStyle,
+  onOpenThemeModal,
 }) => {
+  const activeThemeConfig = getThemeConfig(currentTheme);
+  const activeStyleConfig = getUiStyleConfig(currentStyle);
   return (
     <header className="h-16 px-4 sm:px-8 border-b transition-colors flex items-center justify-between bg-white dark:bg-[#0a0a0a] text-slate-900 dark:text-white border-slate-200 dark:border-white/10 select-none shrink-0 sticky top-0 z-30 shadow-xs">
       {/* Brand Logo & Name */}
@@ -96,6 +105,29 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Clear Queue ({totalImages})</span>
+          </button>
+        )}
+
+        {/* Theme Studio Button */}
+        {onOpenThemeModal && (
+          <button
+            id="open-theme-studio-btn"
+            type="button"
+            onClick={onOpenThemeModal}
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/25 bg-slate-100/90 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.1] transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95 text-xs font-semibold"
+            title="Open Theme & UI Look Studio (Cyberpunk, Neon, Hacker, Material, Glass, Clay, Skeuomorphic)"
+          >
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+              style={{ backgroundColor: activeThemeConfig.accentColor }}
+            />
+            <span className="hidden sm:inline font-bold">
+              {activeThemeConfig.name}
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 text-slate-700 dark:text-white/80 font-bold uppercase tracking-wider hidden md:inline">
+              {activeStyleConfig.badge}
+            </span>
+            <Palette className="w-3.5 h-3.5 text-slate-500 dark:text-white/50" />
           </button>
         )}
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Sliders, RefreshCw, Sparkles, Shield, Maximize2, Cpu, ChevronDown, ChevronUp, Video, VolumeX, Volume2, Eraser, Zap, Brain } from 'lucide-react';
+import { Sliders, RefreshCw, Sparkles, Shield, Maximize2, Cpu, ChevronDown, ChevronUp, Video, VolumeX, Volume2, Eraser, Zap, Brain, Palette } from 'lucide-react';
 import { CompressionSettings } from '../types';
+import { AppTheme, UiLookStyle, getThemeConfig, getUiStyleConfig } from '../utils/themePresets';
 
 interface SettingsPanelProps {
   settings: CompressionSettings;
@@ -8,6 +9,11 @@ interface SettingsPanelProps {
   onResetSettings: () => void;
   disabled?: boolean;
   className?: string;
+  currentTheme?: AppTheme;
+  currentStyle?: UiLookStyle;
+  onSelectTheme?: (theme: AppTheme) => void;
+  onSelectStyle?: (style: UiLookStyle) => void;
+  onOpenThemeModal?: () => void;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -16,8 +22,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onResetSettings,
   disabled = false,
   className = '',
+  currentTheme = 'midnight-pro' as AppTheme,
+  currentStyle = 'default' as UiLookStyle,
+  onSelectTheme,
+  onSelectStyle,
+  onOpenThemeModal,
 }) => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const activeThemeConfig = getThemeConfig(currentTheme);
+  const activeStyleConfig = getUiStyleConfig(currentStyle);
 
   const handleQualityPreset = (val: number) => {
     onChangeSettings({ ...settings, quality: val });
@@ -67,6 +80,106 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {/* Settings Body (always visible on desktop, toggleable on mobile) */}
         <div className={`space-y-6 ${isMobileOpen ? 'block' : 'hidden lg:block'}`}>
+          {/* SECTION 0: Theme & Visual Aesthetics */}
+          <section className="border-t border-slate-200 dark:border-white/5 pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-[10px] font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest flex items-center gap-1.5">
+                <Palette className="w-3 h-3 text-purple-500" />
+                <span>Theme & UI Look</span>
+              </label>
+              {onOpenThemeModal && (
+                <button
+                  type="button"
+                  onClick={onOpenThemeModal}
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                >
+                  All 10 Themes →
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2.5">
+              {/* Active Theme Preview Pill */}
+              <div
+                onClick={onOpenThemeModal}
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-all flex items-center justify-between cursor-pointer group shadow-2xs"
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3.5 h-3.5 rounded-full shadow-xs shrink-0"
+                    style={{ backgroundColor: activeThemeConfig.accentColor }}
+                  />
+                  <div>
+                    <div className="text-xs font-bold text-slate-900 dark:text-white leading-none">
+                      {activeThemeConfig.name}
+                    </div>
+                    <div className="text-[10px] text-slate-400 dark:text-white/40 font-mono mt-0.5">
+                      Style: {activeStyleConfig.name}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-bold uppercase tracking-wider text-slate-700 dark:text-white/70">
+                  {activeThemeConfig.badge}
+                </span>
+              </div>
+
+              {/* Quick Themes selection row */}
+              {onSelectTheme && (
+                <div className="grid grid-cols-3 gap-1 text-[11px] font-semibold">
+                  {[
+                    { id: 'cyberpunk' as AppTheme, label: 'Cyberpunk', color: '#00f0ff' },
+                    { id: 'neon-synthwave' as AppTheme, label: 'Synthwave', color: '#ff2a85' },
+                    { id: 'hacker-matrix' as AppTheme, label: 'Hacker', color: '#00ff66' },
+                    { id: 'gamer-mecha' as AppTheme, label: 'Gamer HUD', color: '#ef4444' },
+                    { id: 'material-you' as AppTheme, label: 'Material 3', color: '#6366f1' },
+                    { id: 'luxury-gold' as AppTheme, label: 'Gold', color: '#eab308' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onSelectTheme(t.id)}
+                      className={`px-2 py-1.5 rounded-lg border text-left flex items-center gap-1.5 transition-all cursor-pointer ${
+                        currentTheme === t.id
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 font-bold shadow-xs'
+                          : 'border-slate-200 dark:border-white/5 bg-slate-100/60 dark:bg-white/[0.02] text-slate-600 dark:text-white/60 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                      <span className="truncate">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Quick UI Look selection row */}
+              {onSelectStyle && (
+                <div className="grid grid-cols-3 gap-1 text-[10px] font-semibold pt-1">
+                  {[
+                    { id: 'default' as UiLookStyle, label: 'Classic' },
+                    { id: 'glassmorphism' as UiLookStyle, label: 'Glass' },
+                    { id: 'liquid-glass' as UiLookStyle, label: 'Liquid' },
+                    { id: 'skeuomorphism' as UiLookStyle, label: 'Tactile' },
+                    { id: 'claymorphism' as UiLookStyle, label: 'Clay 3D' },
+                    { id: 'cyber-hud' as UiLookStyle, label: 'Cyber HUD' },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => onSelectStyle(s.id)}
+                      className={`px-1.5 py-1 rounded-md border text-center transition-all cursor-pointer ${
+                        currentStyle === s.id
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs'
+                          : 'border-slate-200 dark:border-white/5 bg-slate-100/50 dark:bg-white/[0.02] text-slate-600 dark:text-white/60 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
           {/* SECTION 1: Quality & Compression Level */}
           <section className="border-t border-slate-200 dark:border-white/5 pt-4">
             <label className="text-[10px] font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-3.5 block">
