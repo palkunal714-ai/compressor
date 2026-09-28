@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Download, Eye, CheckCircle, Loader2, ArrowRight, Video, Play, Paintbrush } from 'lucide-react';
+import { X, Download, Eye, CheckCircle, Loader2, ArrowRight, Video, Play, Paintbrush, Check } from 'lucide-react';
 import { ImageItem } from '../types';
 import { formatBytes, formatMimeBadge, calculateSavedPercentage, formatDuration } from '../utils/formatters';
 
@@ -11,6 +11,9 @@ interface ImageCardProps {
   onRetry: (item: ImageItem) => void;
   onEdit?: (item: ImageItem) => void;
   disabled?: boolean;
+  isSelected?: boolean;
+  hasAnySelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 export const ImageCard: React.FC<ImageCardProps> = React.memo(({
@@ -21,6 +24,9 @@ export const ImageCard: React.FC<ImageCardProps> = React.memo(({
   onRetry,
   onEdit,
   disabled = false,
+  isSelected = false,
+  hasAnySelected = false,
+  onToggleSelect,
 }) => {
   const savedPercent =
     item.compressedSize && item.originalSize
@@ -41,7 +47,9 @@ export const ImageCard: React.FC<ImageCardProps> = React.memo(({
         }
       }}
       className={`bg-white dark:bg-[#111] border rounded-xl p-3.5 sm:p-4 flex flex-col justify-between transition-all duration-200 group relative ${
-        isDone
+        isSelected
+          ? 'border-fuchsia-500 dark:border-fuchsia-500/80 ring-2 ring-fuchsia-500/30 dark:ring-fuchsia-500/25 bg-fuchsia-50/20 dark:bg-fuchsia-950/20 shadow-md shadow-fuchsia-500/10'
+          : isDone
           ? 'border-slate-200 dark:border-white/10 hover:border-blue-400 dark:hover:border-blue-500/40 shadow-xs hover:shadow-md dark:hover:shadow-blue-500/5'
           : isProcessing
           ? 'border-blue-500/50 ring-1 ring-blue-500/30 shadow-md shadow-blue-500/10'
@@ -58,8 +66,36 @@ export const ImageCard: React.FC<ImageCardProps> = React.memo(({
               ? 'bg-transparency-grid'
               : 'bg-slate-100 dark:bg-white/5'
           }`}
-          onClick={() => (isDone || item.previewUrl) && onPreview(item)}
+          onClick={(e) => {
+            if (e.shiftKey || e.ctrlKey || e.metaKey) {
+              e.stopPropagation();
+              onToggleSelect?.(item.id);
+            } else if (isDone || item.previewUrl) {
+              onPreview(item);
+            }
+          }}
         >
+          {/* Multi-select Checkbox Button */}
+          {onToggleSelect && !isVideo && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSelect(item.id);
+              }}
+              className={`absolute top-1 left-1 z-10 w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer ${
+                isSelected
+                  ? 'bg-fuchsia-600 text-white shadow-md shadow-fuchsia-600/40 ring-1.5 ring-white dark:ring-black scale-100 opacity-100'
+                  : hasAnySelected
+                  ? 'bg-black/50 hover:bg-fuchsia-600 text-transparent hover:text-white border border-white/50 backdrop-blur-xs opacity-75 hover:opacity-100'
+                  : 'bg-black/40 hover:bg-fuchsia-600 text-transparent hover:text-white border border-white/30 backdrop-blur-xs opacity-0 group-hover:opacity-100'
+              }`}
+              title={isSelected ? 'Deselect image' : 'Select image for Auto AI'}
+              aria-label={`Select ${item.name}`}
+            >
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+            </button>
+          )}
           {item.previewUrl ? (
             <img
               src={item.previewUrl}

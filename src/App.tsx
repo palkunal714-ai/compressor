@@ -19,6 +19,7 @@ import { generateSampleImages } from './utils/sampleGenerator';
 import { ScannedFileItem, extractFolderPath, getFolderHierarchySummary, isValidMediaFile } from './utils/fileScanner';
 import { batchRemoveBgAndZip } from './utils/bgRemover';
 import { ThemeModal } from './components/ThemeModal';
+import { Brain, Zap, Sparkles, Trash2, Check, X, CheckSquare, Layers } from 'lucide-react';
 import {
   AppTheme,
   UiLookStyle,
@@ -115,7 +116,21 @@ export default function App() {
   const [bgRemovalItemsDone, setBgRemovalItemsDone] = useState(0);
   const [bgRemovalItemsTotal, setBgRemovalItemsTotal] = useState(0);
 
+  // Multi-select state
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+
   const isCancelledRef = useRef(false);
+
+  // Escape key deselects all
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedItemIds.size > 0) {
+        setSelectedItemIds(new Set());
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedItemIds.size]);
 
   // Theme preset sync
   useEffect(() => {
@@ -312,6 +327,12 @@ export default function App() {
       }
       return prev.filter((it) => it.id !== id);
     });
+    setSelectedItemIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
 
   // --- Clear Queue ---
@@ -322,6 +343,7 @@ export default function App() {
       }
     });
     setImages([]);
+    setSelectedItemIds(new Set());
     addToast({
       type: 'info',
       title: 'Queue Cleared',
@@ -578,131 +600,247 @@ export default function App() {
     }
   }, [handleFilesSelected, addToast]);
 
-  // --- Background Removal & ZIP ---
-  const handleRemoveBgAndZip = useCallback(async () => {
-    const imageOnlyItems = images.filter((it) => it.mediaType === 'image');
-    if (imageOnlyItems.length === 0) {
-      addToast({
-        type: 'warning',
-        title: 'No Images Found',
-        message: 'Background removal only works on images. Add some images to the queue first.',
-      });
-      return;
+  // --- Selection Handlers ---
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectAllToggle = useCallback(() => {
+    const eligibleImages = images.filter((it) => it.mediaType === 'image');
+    if (eligibleImages.length === 0) return;
+    const allSelected = eligibleImages.every((it) => selectedItemIds.has(it.id));
+    if (allSelected) {
+      setSelectedItemIds(new Set());
+    } else {
+      setSelectedItemIds(new Set(eligibleImages.map((it) => it.id)));
     }
+  }, [images, selectedItemIds]);
 
-    if (isRemovingBg || isProcessing) return;
+  const handleClearSelection = useCallback(() => {
+    setSelectedItemIds(new Set());
+  }, []);
 
-    isCancelledRef.current = false;
-    setIsRemovingBg(true);
-    setBgRemovalProgress(0);
-    setBgRemovalItemsDone(0);
-    setBgRemovalItemsTotal(imageOnlyItems.length);
-
-    const isStudio = (settings.bgEngine ?? 'studio') === 'studio';
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedItemIds.size === 0) return;
+    const count = selectedItemIds.size;
+    setImages((prev) => {
+      prev.forEach((it) => {
+        if (selectedItemIds.has(it.id) && it.previewUrl && it.previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(it.previewUrl);
+        }
+      });
+      return prev.filter((it) => !selectedItemIds.has(it.id));
+    });
+    setSelectedItemIds(new Set());
     addToast({
       type: 'info',
-      title: isStudio ? '⚡ Fast Studio BG Removal' : '🧠 AI Neural BG Removal',
-      message: isStudio
-        ? `Processing ${imageOnlyItems.length} image(s) with instant perimeter flood-fill & anti-aliasing...`
-        : `Processing ${imageOnlyItems.length} image(s) with deep learning model in-browser...`,
-      duration: 5000,
+      title: 'Items Removed',
+      message: `Removed ${count} item(s) from the queue.`,
+      duration: 3000,
     });
+  }, [selectedItemIds, addToast]);
 
-    let lastProgressUpdate = 0;
+  const handleCompressSelected = useCallback(async () => {
+    if (selectedItemIds.size === 0 || isProcessing) return;
+    const itemsToProcess = images.filter((it) => selectedItemIds.has(it.id));
+    if (itemsToProcess.length === 0) return;
+
+    isCancelledRef.current = false;
+    setIsProcessing(true);
+
+    setImages((prev) =>
+      prev.map((it) =>
+        selectedItemIds.has(it.id)
+          ? { ...it, status: 'pending' as const, progress: 0 }
+          : it
+      )
+    );
 
     try {
-      const result = await batchRemoveBgAndZip(
-        images,
-        settings,
-        // onItemStart
-        (itemId) => {
-          setImages((prev) =>
-            prev.map((it) => (it.id === itemId ? { ...it, status: 'processing', progress: 0 } : it))
-          );
-        },
-        // onItemProgress
-        (itemId, progress) => {
-          const now = performance.now();
-          if (now - lastProgressUpdate > 120 || progress >= 99) {
-            lastProgressUpdate = now;
-            setBgRemovalProgress(progress);
-          }
-        },
-        // onItemDone
-        (itemId, resultBlob) => {
-          const previewUrl = URL.createObjectURL(resultBlob);
-          setImages((prev) =>
-            prev.map((it) => {
-              if (it.id !== itemId) return it;
-              let outName = it.outputFilename || it.name;
-              outName = outName.replace(/\.[^/.]+$/, '') + '.png';
-              let outRel = it.outputRelativePath || it.relativePath;
-              if (outRel) {
-                outRel = outRel.replace(/\.[^/.]+$/, '') + '.png';
-              }
-              return {
-                ...it,
-                status: 'done',
-                progress: 100,
-                compressedBlob: resultBlob,
-                compressedSize: resultBlob.size,
-                compressedFormat: 'PNG',
-                outputFilename: outName,
-                outputRelativePath: outRel,
-                previewUrl,
-                isBgRemoved: true,
-              };
-            })
-          );
-          setBgRemovalItemsDone((prev) => prev + 1);
-        },
-        // onItemError
-        (itemId, error) => {
-          setImages((prev) =>
-            prev.map((it) => (it.id === itemId ? { ...it, status: 'error', error } : it))
-          );
-          setBgRemovalItemsDone((prev) => prev + 1);
-        },
-        // onZipProgress
-        (percent) => {
-          setBgRemovalProgress(percent);
-        },
-        // isCancelled
-        () => isCancelledRef.current,
-        // autoDownloadZip
-        false
-      );
+      await processQueueWithConcurrency(itemsToProcess, settings.concurrency, async (item) => {
+        if (isCancelledRef.current) return;
+        await handleCompressItem(item, settings);
+      });
 
-      setIsRemovingBg(false);
-
-      // Confetti celebration
-      try {
-        confetti({
-          particleCount: 100,
-          spread: 80,
-          origin: { y: 0.7 },
-          colors: ['#d946ef', '#a855f7', '#ec4899', '#f472b6'],
-        });
-      } catch {
-        // ignore
-      }
-
+      setIsProcessing(false);
       addToast({
         type: 'success',
-        title: 'Background Removal Completed',
-        message: `${result.totalItems} transparent PNG(s) ready. You can review/touch up images and download the ZIP when ready.`,
-        duration: 7000,
+        title: 'Batch Compression Complete',
+        message: `Compressed ${itemsToProcess.length} selected item(s).`,
+        duration: 5000,
       });
-    } catch (err: any) {
-      console.error('BG removal failed:', err);
-      setIsRemovingBg(false);
+    } catch (error: any) {
+      console.error('Batch compression failed:', error);
+      setIsProcessing(false);
       addToast({
-        type: err?.message?.includes('stopped') ? 'info' : 'error',
-        title: err?.message?.includes('stopped') ? 'Batch Cancelled' : 'Background Removal Failed',
-        message: err?.message || 'An error occurred during background removal.',
+        type: 'error',
+        title: 'Batch Error',
+        message: error?.message || 'An error occurred during compression.',
       });
     }
-  }, [images, isRemovingBg, isProcessing, settings, addToast]);
+  }, [selectedItemIds, images, isProcessing, settings, handleCompressItem, addToast]);
+
+  // --- Background Removal (Supports All or Selected, and Engine Override) ---
+  const handleRemoveBg = useCallback(
+    async (targetIds?: Set<string>, engineOverride?: 'ai' | 'studio') => {
+      let imageOnlyItems = images.filter((it) => it.mediaType === 'image');
+      if (targetIds && targetIds.size > 0) {
+        imageOnlyItems = imageOnlyItems.filter((it) => targetIds.has(it.id));
+      }
+
+      if (imageOnlyItems.length === 0) {
+        addToast({
+          type: 'warning',
+          title: 'No Images Selected',
+          message: 'Background removal only works on images. Select one or more images first.',
+        });
+        return;
+      }
+
+      if (isRemovingBg || isProcessing) return;
+
+      const effectiveSettings: CompressionSettings = engineOverride
+        ? { ...settings, bgEngine: engineOverride }
+        : settings;
+
+      const isStudio = (effectiveSettings.bgEngine ?? 'studio') === 'studio';
+
+      isCancelledRef.current = false;
+      setIsRemovingBg(true);
+      setBgRemovalProgress(0);
+      setBgRemovalItemsDone(0);
+      setBgRemovalItemsTotal(imageOnlyItems.length);
+
+      addToast({
+        type: 'info',
+        title: isStudio ? '⚡ Fast Studio BG Removal' : '🧠 Auto AI Neural BG Removal',
+        message: isStudio
+          ? `Processing ${imageOnlyItems.length} image(s) with instant perimeter flood-fill & anti-aliasing...`
+          : `Processing ${imageOnlyItems.length} image(s) with deep learning neural model in-browser...`,
+        duration: 5000,
+      });
+
+      let lastProgressUpdate = 0;
+
+      try {
+        const result = await batchRemoveBgAndZip(
+          imageOnlyItems,
+          effectiveSettings,
+          // onItemStart
+          (itemId) => {
+            setImages((prev) =>
+              prev.map((it) => (it.id === itemId ? { ...it, status: 'processing', progress: 0 } : it))
+            );
+          },
+          // onItemProgress
+          (itemId, progress) => {
+            const now = performance.now();
+            if (now - lastProgressUpdate > 120 || progress >= 99) {
+              lastProgressUpdate = now;
+              setBgRemovalProgress(progress);
+            }
+          },
+          // onItemDone
+          (itemId, resultBlob) => {
+            const previewUrl = URL.createObjectURL(resultBlob);
+            setImages((prev) =>
+              prev.map((it) => {
+                if (it.id !== itemId) return it;
+                let outName = it.outputFilename || it.name;
+                outName = outName.replace(/\.[^/.]+$/, '') + '.png';
+                let outRel = it.outputRelativePath || it.relativePath;
+                if (outRel) {
+                  outRel = outRel.replace(/\.[^/.]+$/, '') + '.png';
+                }
+                return {
+                  ...it,
+                  status: 'done',
+                  progress: 100,
+                  compressedBlob: resultBlob,
+                  compressedSize: resultBlob.size,
+                  compressedFormat: 'PNG',
+                  outputFilename: outName,
+                  outputRelativePath: outRel,
+                  previewUrl,
+                  isBgRemoved: true,
+                };
+              })
+            );
+            setBgRemovalItemsDone((prev) => prev + 1);
+          },
+          // onItemError
+          (itemId, error) => {
+            setImages((prev) =>
+              prev.map((it) => (it.id === itemId ? { ...it, status: 'error', error } : it))
+            );
+            setBgRemovalItemsDone((prev) => prev + 1);
+          },
+          // onZipProgress
+          (percent) => {
+            setBgRemovalProgress(percent);
+          },
+          // isCancelled
+          () => isCancelledRef.current,
+          // autoDownloadZip
+          false
+        );
+
+        setIsRemovingBg(false);
+
+        // Confetti celebration
+        try {
+          confetti({
+            particleCount: 100,
+            spread: 80,
+            origin: { y: 0.7 },
+            colors: ['#d946ef', '#a855f7', '#ec4899', '#f472b6'],
+          });
+        } catch {
+          // ignore
+        }
+
+        addToast({
+          type: 'success',
+          title: isStudio ? '⚡ Fast BG Removal Completed' : '🧠 Auto AI BG Removal Completed',
+          message: `${result.totalItems} transparent PNG(s) ready. You can review/touch up images and download the ZIP when ready.`,
+          duration: 7000,
+        });
+      } catch (err: any) {
+        console.error('BG removal failed:', err);
+        setIsRemovingBg(false);
+        addToast({
+          type: err?.message?.includes('stopped') ? 'info' : 'error',
+          title: err?.message?.includes('stopped') ? 'Batch Cancelled' : 'Background Removal Failed',
+          message: err?.message || 'An error occurred during background removal.',
+        });
+      }
+    },
+    [images, isRemovingBg, isProcessing, settings, addToast]
+  );
+
+  const handleAutoAiSelected = useCallback(() => {
+    handleRemoveBg(selectedItemIds, 'ai');
+  }, [handleRemoveBg, selectedItemIds]);
+
+  const handleFastStudioSelected = useCallback(() => {
+    handleRemoveBg(selectedItemIds, 'studio');
+  }, [handleRemoveBg, selectedItemIds]);
+
+  const handleRemoveBgAndZip = useCallback(() => {
+    if (selectedItemIds.size > 0) {
+      handleRemoveBg(selectedItemIds);
+    } else {
+      handleRemoveBg();
+    }
+  }, [handleRemoveBg, selectedItemIds]);
 
   // --- Handle Touch-Up Save ---
   const handleSaveTouchUp = useCallback(
@@ -833,16 +971,116 @@ export default function App() {
               />
 
               {/* Grid / Table Workspace Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-3">
                   <span className="text-[10px] font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest">
                     Active Queue ({images.length})
                   </span>
+                  {images.some((it) => it.mediaType === 'image') && (
+                    <button
+                      type="button"
+                      onClick={handleSelectAllToggle}
+                      className="text-[11px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:text-fuchsia-700 dark:hover:text-fuchsia-300 flex items-center gap-1 cursor-pointer transition-colors"
+                      title={
+                        images.filter((it) => it.mediaType === 'image').every((it) => selectedItemIds.has(it.id))
+                          ? 'Deselect All'
+                          : 'Select all images for Auto AI'
+                      }
+                    >
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>
+                        {images.filter((it) => it.mediaType === 'image').every((it) => selectedItemIds.has(it.id)) && selectedItemIds.size > 0
+                          ? 'Deselect All'
+                          : `Select All (${images.filter((it) => it.mediaType === 'image').length})`}
+                      </span>
+                    </button>
+                  )}
                 </div>
                 <span className="text-[10px] text-slate-400 dark:text-white/30 hidden sm:inline">
-                  Select card and press <kbd className="font-mono text-slate-700 dark:text-white/60 bg-slate-200 dark:bg-white/5 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">Delete</kbd> to remove
+                  Check images or Shift-click to select for Auto AI
                 </span>
               </div>
+
+              {/* Floating Multi-Selection Action Toolbar */}
+              {selectedItemIds.size > 0 && (
+                <div className="sticky top-2 z-20 w-full p-2.5 sm:p-3 bg-white/95 dark:bg-[#121216]/95 border border-fuchsia-500/40 dark:border-fuchsia-500/30 rounded-2xl shadow-xl shadow-fuchsia-500/10 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-2.5 py-1 rounded-lg bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300 font-bold text-xs flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>{selectedItemIds.size} {selectedItemIds.size === 1 ? 'image' : 'images'} selected</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllToggle}
+                      className="text-xs text-slate-500 dark:text-white/60 hover:text-slate-800 dark:hover:text-white underline cursor-pointer"
+                    >
+                      {selectedItemIds.size === images.filter((it) => it.mediaType === 'image').length
+                        ? 'Deselect All'
+                        : `Select All (${images.filter((it) => it.mediaType === 'image').length})`}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Dedicated AUTO AI Button */}
+                    <button
+                      type="button"
+                      id="batch-auto-ai-btn"
+                      disabled={isRemovingBg || isProcessing}
+                      onClick={handleAutoAiSelected}
+                      className="px-3.5 py-1.5 rounded-xl bg-linear-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 active:scale-95 text-white font-bold text-xs shadow-md shadow-fuchsia-600/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all"
+                      title="Run Auto AI Neural Background Removal on selected images"
+                    >
+                      <Brain className="w-3.5 h-3.5" />
+                      <span>Auto AI ({selectedItemIds.size})</span>
+                    </button>
+
+                    {/* Fast Studio Button */}
+                    <button
+                      type="button"
+                      disabled={isRemovingBg || isProcessing}
+                      onClick={handleFastStudioSelected}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 dark:bg-white/10 hover:bg-slate-700 dark:hover:bg-white/20 active:scale-95 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all"
+                      title="Run Fast Studio perimeter flood-fill on selected images"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Fast Studio</span>
+                    </button>
+
+                    {/* Compress Selected */}
+                    <button
+                      type="button"
+                      disabled={isRemovingBg || isProcessing}
+                      onClick={handleCompressSelected}
+                      className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-semibold text-xs shadow-xs shadow-blue-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Compress</span>
+                    </button>
+
+                    {/* Delete Selected */}
+                    <button
+                      type="button"
+                      disabled={isRemovingBg || isProcessing}
+                      onClick={handleDeleteSelected}
+                      className="px-2.5 py-1.5 rounded-xl border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 active:scale-95 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all"
+                      title="Remove selected images from queue"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Delete</span>
+                    </button>
+
+                    {/* Clear Selection */}
+                    <button
+                      type="button"
+                      onClick={handleClearSelection}
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer transition-all"
+                      title="Clear selection (Esc)"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* View Rendering */}
               {viewMode === 'grid' ? (
@@ -856,7 +1094,10 @@ export default function App() {
                       onPreview={setActivePreviewItem}
                       onRetry={(it) => handleCompressItem(it, settings)}
                       onEdit={setActiveEditItem}
-                      disabled={isProcessing}
+                      disabled={isProcessing || isRemovingBg}
+                      isSelected={selectedItemIds.has(item.id)}
+                      hasAnySelected={selectedItemIds.size > 0}
+                      onToggleSelect={handleToggleSelect}
                     />
                   ))}
                 </div>
@@ -866,6 +1107,18 @@ export default function App() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#080808] text-[10px] font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest">
+                          <th className="py-3 px-3 w-10 text-center">
+                            <input
+                              type="checkbox"
+                              checked={
+                                images.filter((it) => it.mediaType === 'image').length > 0 &&
+                                images.filter((it) => it.mediaType === 'image').every((it) => selectedItemIds.has(it.id))
+                              }
+                              onChange={handleSelectAllToggle}
+                              className="w-4 h-4 rounded border-slate-300 dark:border-white/20 text-fuchsia-600 accent-fuchsia-600 cursor-pointer"
+                              title="Select/Deselect All"
+                            />
+                          </th>
                           <th className="py-3 px-4">Media Details</th>
                           <th className="py-3 px-3">Original Size</th>
                           <th className="py-3 px-3">Compressed</th>
@@ -884,7 +1137,9 @@ export default function App() {
                             onPreview={setActivePreviewItem}
                             onRetry={(it) => handleCompressItem(it, settings)}
                             onEdit={setActiveEditItem}
-                            disabled={isProcessing}
+                            disabled={isProcessing || isRemovingBg}
+                            isSelected={selectedItemIds.has(item.id)}
+                            onToggleSelect={handleToggleSelect}
                           />
                         ))}
                       </tbody>
@@ -902,6 +1157,7 @@ export default function App() {
         <StatsBar
           stats={batchStats}
           folderCount={getFolderHierarchySummary(images).distinctFoldersCount}
+          selectedCount={selectedItemIds.size}
           onCompressAndDownload={() => handleCompressAll(false)}
           onCompressAll={() => handleCompressAll(false)}
           onDownloadZip={() => triggerZipDownload()}

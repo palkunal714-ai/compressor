@@ -6,6 +6,7 @@ import { formatBytes } from '../utils/formatters';
 interface StatsBarProps {
   stats: BatchStats;
   folderCount?: number;
+  selectedCount?: number;
   onCompressAndDownload: () => void;
   onCompressAll: () => void;
   onDownloadZip: () => void;
@@ -23,6 +24,7 @@ interface StatsBarProps {
 export const StatsBar: React.FC<StatsBarProps> = ({
   stats,
   folderCount = 0,
+  selectedCount = 0,
   onCompressAndDownload,
   onCompressAll,
   onDownloadZip,
@@ -191,7 +193,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
               ) : (
                 <>
                   <Eraser className="w-4 h-4" />
-                  <span>Remove BG</span>
+                  <span>{selectedCount > 0 ? `Remove BG (${selectedCount} Sel)` : 'Remove BG'}</span>
                 </>
               )}
             </button>

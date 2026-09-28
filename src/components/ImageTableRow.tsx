@@ -11,6 +11,8 @@ interface ImageTableRowProps {
   onRetry: (item: ImageItem) => void;
   onEdit?: (item: ImageItem) => void;
   disabled?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
@@ -21,6 +23,8 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
   onRetry,
   onEdit,
   disabled = false,
+  isSelected = false,
+  onToggleSelect,
 }) => {
   const savedPercent =
     item.compressedSize && item.originalSize
@@ -40,8 +44,25 @@ export const ImageTableRow: React.FC<ImageTableRowProps> = React.memo(({
           onRemove(item.id);
         }
       }}
-      className="border-b border-slate-200/80 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors group focus:outline-hidden focus:bg-blue-500/5 text-slate-800 dark:text-white/90"
+      className={`border-b border-slate-200/80 dark:border-white/5 transition-colors group focus:outline-hidden text-slate-800 dark:text-white/90 ${
+        isSelected
+          ? 'bg-fuchsia-500/10 dark:bg-fuchsia-500/15'
+          : 'hover:bg-slate-50 dark:hover:bg-white/[0.02]'
+      }`}
     >
+      {/* Selection Checkbox */}
+      <td className="py-3 px-3 w-10 text-center">
+        {onToggleSelect && !isVideo ? (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect(item.id)}
+            className="w-4 h-4 rounded border-slate-300 dark:border-white/20 text-fuchsia-600 accent-fuchsia-600 cursor-pointer"
+            aria-label={`Select ${item.name}`}
+          />
+        ) : null}
+      </td>
+
       {/* 1. Thumbnail + Details */}
       <td className="py-3 px-4 whitespace-nowrap">
         <div className="flex items-center gap-3">
